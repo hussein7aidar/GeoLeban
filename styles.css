@@ -1,0 +1,280 @@
+:root {
+  --bg-canvas: #eef2f6;
+  --panel-bg: rgba(255, 255, 255, 0.96);
+  --panel-border: #cbd5e1;
+  --pill-track: #f1f5f9;
+  --pill-active-bg: #ffffff;
+  --pill-text: #475569;
+  --text: #0f172a;
+  --accent: #0284c7;
+  --input-bg: #ffffff;
+  --focus-stroke-color: #0f172a;
+  --hud-needle-n: #ef4444;
+  --hud-needle-s: #94a3b8;
+}
+
+body[data-theme="dark"] {
+  --bg-canvas: #090d16;
+  --panel-bg: rgba(15, 23, 42, 0.95);
+  --panel-border: #334155;
+  --pill-track: #1e293b;
+  --pill-active-bg: #334155;
+  --pill-text: #94a3b8;
+  --text: #f8fafc;
+  --accent: #38bdf8;
+  --input-bg: #1e293b;
+  --focus-stroke-color: #f1f5f9;
+  --hud-needle-n: #f87171;
+  --hud-needle-s: #475569;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body,
+html {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  background: var(--bg-canvas);
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans Arabic",
+    sans-serif;
+  transition: background 0.25s ease;
+}
+
+#map {
+  height: 100vh;
+  width: 100vw;
+}
+
+body[data-theme="dark"] .maplibregl-canvas {
+  filter: invert(92%) hue-rotate(180deg) brightness(95%) contrast(90%);
+}
+
+/* Floating Top Toolbar */
+.control-card {
+  position: absolute;
+  top: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10;
+  background: var(--panel-bg);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--panel-border);
+  padding: 12px 22px;
+  border-radius: 22px;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.14);
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: nowrap;
+  transition: all 0.25s ease;
+}
+
+.pill-group {
+  display: flex;
+  background: var(--pill-track);
+  padding: 4px;
+  border-radius: 12px;
+  border: 1px solid var(--panel-border);
+  transition: background 0.25s ease;
+}
+
+.pill-btn {
+  background: transparent;
+  border: none;
+  padding: 8px 14px;
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: var(--pill-text);
+  cursor: pointer;
+  border-radius: 9px;
+  transition: all 0.15s ease;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.pill-btn.active {
+  background: var(--pill-active-bg);
+  color: var(--accent);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
+}
+
+.flag-icon {
+  width: 20px;
+  height: 14px;
+  border-radius: 3px;
+  object-fit: cover;
+  display: inline-block;
+  box-shadow: 0 0 2px rgba(0, 0, 0, 0.25);
+}
+
+select {
+  background: var(--input-bg);
+  border: 1px solid var(--panel-border);
+  color: var(--text);
+  font-size: 0.95rem;
+  font-weight: 600;
+  padding: 9px 16px;
+  border-radius: 12px;
+  cursor: pointer;
+  outline: none;
+  transition: all 0.2s ease;
+}
+
+select:focus,
+select:hover {
+  border-color: var(--accent);
+}
+
+.btn-icon-square {
+  width: 44px;
+  height: 44px;
+  background: var(--input-bg);
+  border: 1px solid var(--panel-border);
+  color: var(--text);
+  border-radius: 12px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  flex-shrink: 0;
+  transition: all 0.2s ease;
+}
+
+.btn-icon-square:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  transform: scale(1.05);
+}
+
+.btn-icon-square svg {
+  width: 22px;
+  height: 22px;
+  stroke: currentColor;
+  stroke-width: 2;
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* Horizontal Flight HUD Instruments */
+.hud-panel {
+  position: absolute;
+  bottom: 28px;
+  right: 28px;
+  z-index: 10;
+  background: var(--panel-bg);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--panel-border);
+  padding: 10px 18px;
+  border-radius: 20px;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.16);
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  color: var(--text);
+  user-select: none;
+  transition: all 0.25s ease;
+}
+
+.hud-block {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.hud-meta {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.hud-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: var(--pill-text);
+  text-transform: uppercase;
+}
+
+.hud-val {
+  font-size: 0.96rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+
+.hud-sub {
+  font-size: 0.74rem;
+  color: var(--pill-text);
+  font-weight: 700;
+}
+
+.compass-btn {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: var(--pill-track);
+  border: 1px solid var(--panel-border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  position: relative;
+  flex-shrink: 0;
+  transition:
+    transform 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.compass-btn:hover {
+  border-color: var(--accent);
+  transform: scale(1.05);
+}
+
+.compass-ring {
+  width: 100%;
+  height: 100%;
+  position: absolute;
+  top: 0;
+  left: 0;
+  transition: transform 0.05s linear;
+}
+
+.pitch-track {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: var(--pill-track);
+  border: 1px solid var(--panel-border);
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.pitch-horizon {
+  width: 100%;
+  height: 2.5px;
+  background: var(--accent);
+  position: absolute;
+  transition: transform 0.05s linear;
+}
+
+.hud-divider {
+  width: 1px;
+  height: 32px;
+  background: var(--panel-border);
+}

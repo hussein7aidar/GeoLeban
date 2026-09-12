@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="ar">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Lebanon Geography Explorer</title>
+
+  <!-- External Library -->
+  <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
+  <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+
+  <!-- Application Stylesheet -->
+  <link rel="stylesheet" href="./styles.css" />
+
+  <!-- Datasets -->
+  <script src="./lebanon.js"></script>
+  <script src="./cazas.js"></script>
+
+  <!-- Application Scripts -->
+  <script src="./js/constants.js"></script>
+  <script src="./js/translations.js"></script>
+  <script src="./js/utils.js"></script>
+  <script src="./js/app.js" defer></script>
+</head>
+
+<body data-theme="light">
+
+  <div class="control-card">
+    <div class="pill-group" id="theme-switch">
+      <button class="pill-btn active" id="btn-light" onclick="setTheme('light')">☀ Light</button>
+      <button class="pill-btn" id="btn-dark" onclick="setTheme('dark')">☾ Dark</button>
+    </div>
+
+    <div class="pill-group" id="lang-switch">
+      <button class="pill-btn active" id="lang-ar" onclick="setLanguage('ar')">
+        <svg class="flag-icon" viewBox="0 0 600 400">
+          <rect width="600" height="400" fill="#ED1C24" />
+          <rect y="100" width="600" height="200" fill="#fff" />
+          <polygon points="300,120 250,260 350,260" fill="#00A651" />
+          <rect x="290" y="260" width="20" height="20" fill="#00A651" />
+        </svg>
+        AR
+      </button>
+      <button class="pill-btn" id="lang-en" onclick="setLanguage('en')">
+        <svg class="flag-icon" viewBox="0 0 60 30">
+          <clipPath id="s">
+            <path d="M0,0 v30 h60 v-30 z" />
+          </clipPath>
+          <clipPath id="t">
+            <path d="M30,15 h30 v15 z v15 h-30 z h-30 v-15 z v-15 h30 z" />
+          </clipPath>
+          <g clip-path="url(#s)">
+            <path d="M0,0 v30 h60 v-30 z" fill="#012169" />
+            <path d="M0,0 L60,30 M60,0 L0,30" stroke="#fff" stroke-width="6" />
+            <path d="M0,0 L60,30 M60,0 L0,30" clip-path="url(#t)" stroke="#C8102E" stroke-width="4" />
+            <path d="M30,0 v30 M0,15 h60" stroke="#fff" stroke-width="10" />
+            <path d="M30,0 v30 M0,15 h60" stroke="#C8102E" stroke-width="6" />
+          </g>
+        </svg>
+        EN
+      </button>
+      <button class="pill-btn" id="lang-fr" onclick="setLanguage('fr')">
+        <svg class="flag-icon" viewBox="0 0 3 2">
+          <rect width="1" height="2" fill="#002395" />
+          <rect x="1" width="1" height="2" fill="#fff" />
+          <rect x="2" width="1" height="2" fill="#ED2939" />
+        </svg>
+        FR
+      </button>
+    </div>
+
+    <div class="pill-group" id="mode-switch">
+      <button id="btn-gov" class="pill-btn active" onclick="setMode('gov')">المحافظات</button>
+      <button id="btn-caza" class="pill-btn" onclick="setMode('caza')">الأقضية</button>
+    </div>
+
+    <select id="item-select" onchange="selectItem(this.value)">
+      <option value="all">كامل لبنان</option>
+    </select>
+
+    <button class="btn-icon-square" id="btn-reset" onclick="resetView()" title="Recenter View">
+      <svg viewBox="0 0 24 24">
+        <path d="M4 8V4m0 0h4M4 4l5 5m11-5h-4m4 0v4m0-4l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+      </svg>
+    </button>
+  </div>
+
+  <div class="hud-panel">
+    <div class="hud-block">
+      <div class="compass-btn" title="Reset Heading" onclick="resetHeading()">
+        <svg class="compass-ring" id="compass-needle" viewBox="0 0 44 44">
+          <polygon points="22,6 26,22 18,22" fill="var(--hud-needle-n)" />
+          <polygon points="22,38 26,22 18,22" fill="var(--hud-needle-s)" />
+          <circle cx="22" cy="22" r="2.5" fill="var(--text)" />
+        </svg>
+      </div>
+      <div class="hud-meta">
+        <span class="hud-val" id="val-bearing">0°</span>
+        <span class="hud-label" id="lbl-compass">بوصلة</span>
+      </div>
+    </div>
+
+    <div class="hud-divider"></div>
+
+    <div class="hud-block">
+      <div class="pitch-track" title="Map Pitch">
+        <div class="pitch-horizon" id="pitch-horizon"></div>
+      </div>
+      <div class="hud-meta">
+        <span class="hud-val" id="val-pitch">0°</span>
+        <span class="hud-label" id="lbl-tilt">الميل</span>
+      </div>
+    </div>
+
+    <div class="hud-divider"></div>
+
+    <div class="hud-block">
+      <div class="hud-meta">
+        <div style="display: flex; align-items: baseline; gap: 6px;">
+          <span class="hud-val" id="val-alt">320 km</span>
+          <span class="hud-sub" id="val-zoom">Z: 8.5</span>
+        </div>
+        <span class="hud-label" id="lbl-alt">الارتفاع</span>
+      </div>
+    </div>
+  </div>
+
+  <div id="map"></div>
+</body>
+
+</html>
