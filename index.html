@@ -13,6 +13,11 @@
   <!-- Application Stylesheet -->
   <link rel="stylesheet" href="./styles.css" />
 
+  <!-- Firebase SDK (compat). Only used when js/firebase-config.js is filled in. -->
+  <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore-compat.js"></script>
+
   <!-- Datasets -->
   <script src="./lebanon.js"></script>
   <script src="./cazas.js"></script>
@@ -21,7 +26,10 @@
   <script src="./js/constants.js"></script>
   <script src="./js/translations.js"></script>
   <script src="./js/utils.js"></script>
+  <script src="./js/firebase-config.js"></script>
+  <script src="./js/backend.js" defer></script>
   <script src="./js/app.js" defer></script>
+  <script src="./js/game.js" defer></script>
 </head>
 
 <body data-theme="light">
@@ -127,6 +135,214 @@
   </div>
 
   <div id="map"></div>
+
+  <!-- ============================= AUTH OVERLAY ============================ -->
+  <div class="overlay active" id="auth-overlay">
+    <div class="panel auth-panel">
+      <div class="brand">
+        <div class="brand-mark">GL</div>
+        <div>
+          <h1 data-i18n="title"></h1>
+          <p class="muted" data-i18n="subtitle"></p>
+        </div>
+      </div>
+
+      <div class="tab-switch">
+        <button type="button" id="auth-tab-login" class="active" data-i18n="login"></button>
+        <button type="button" id="auth-tab-signup" data-i18n="signup"></button>
+      </div>
+
+      <form id="auth-form" novalidate>
+        <div class="field" id="auth-name-field">
+          <label for="auth-name" data-i18n="fullName"></label>
+          <input id="auth-name" type="text" autocomplete="name" />
+        </div>
+        <div class="field">
+          <label for="auth-email" data-i18n="email"></label>
+          <input id="auth-email" type="email" autocomplete="email" />
+        </div>
+        <div class="field">
+          <label for="auth-password" data-i18n="password"></label>
+          <input id="auth-password" type="password" autocomplete="current-password" />
+        </div>
+        <p class="form-error" id="auth-error"></p>
+        <button type="submit" class="btn-primary" id="auth-submit"></button>
+      </form>
+
+      <button type="button" class="link-btn" id="auth-switch"></button>
+      <p class="local-note" id="auth-mode-note"></p>
+    </div>
+  </div>
+
+  <!-- ============================= MENU OVERLAY ============================ -->
+  <div class="overlay" id="menu-overlay">
+    <div class="panel menu-panel">
+      <div class="menu-head">
+        <h2><span data-i18n="welcome"></span>, <span id="menu-user-name"></span></h2>
+        <p class="muted" id="menu-user-email"></p>
+      </div>
+      <div class="menu-grid">
+        <button class="menu-item primary" id="menu-play">
+          <span class="menu-icon">▶</span><span data-i18n="menuPlay"></span>
+        </button>
+        <button class="menu-item" id="menu-stats">
+          <span class="menu-icon">★</span><span data-i18n="menuStats"></span>
+        </button>
+        <button class="menu-item" id="menu-leaderboard">
+          <span class="menu-icon">≡</span><span data-i18n="menuLeaderboard"></span>
+        </button>
+        <button class="menu-item" id="menu-explore">
+          <span class="menu-icon">◎</span><span data-i18n="menuExplore"></span>
+        </button>
+      </div>
+      <button class="link-btn" id="menu-logout" data-i18n="menuLogout"></button>
+      <p class="local-note" id="menu-mode-note"></p>
+    </div>
+  </div>
+
+  <!-- ============================= SETUP OVERLAY =========================== -->
+  <div class="overlay" id="setup-overlay">
+    <div class="panel setup-panel">
+      <h2 data-i18n="title"></h2>
+
+      <div class="setup-group">
+        <label data-i18n="modeLabel"></label>
+        <div class="segmented">
+          <button data-setup-mode="gov" data-i18n="govOption"></button>
+          <button data-setup-mode="caza" data-i18n="cazaOption"></button>
+        </div>
+      </div>
+
+      <div class="setup-group">
+        <label data-i18n="inputLabel"></label>
+        <div class="segmented">
+          <button data-setup-input="click" data-i18n="clickOption"></button>
+          <button data-setup-input="type" data-i18n="typeOption"></button>
+        </div>
+      </div>
+
+      <div class="setup-group">
+        <label data-i18n="timerLabel"></label>
+        <div class="segmented">
+          <button data-setup-timer="0" data-i18n="noTimer"></button>
+          <button data-setup-timer="1">1'</button>
+          <button data-setup-timer="2">2'</button>
+          <button data-setup-timer="5">5'</button>
+        </div>
+        <div class="custom-timer">
+          <input id="setup-custom-min" type="number" min="1" max="60" placeholder="—" />
+          <span data-i18n="customMinutes"></span>
+        </div>
+      </div>
+
+      <div class="setup-actions">
+        <button class="link-btn" id="setup-back" data-i18n="back"></button>
+        <button class="btn-primary" id="setup-start" data-i18n="startGame"></button>
+      </div>
+    </div>
+  </div>
+
+  <!-- =============================== GAME HUD ============================== -->
+  <div class="game-hud" id="game-hud">
+    <div class="game-top">
+      <span class="game-stat" id="game-progress"></span>
+      <span class="game-stat timer" id="game-timer">0:00</span>
+      <span class="game-stat" id="game-tries"></span>
+      <span class="game-stat" id="game-score"></span>
+      <button class="game-quit" id="game-quit" data-i18n="quit"></button>
+    </div>
+
+    <div class="game-prompt">
+      <div class="game-prompt-label" id="game-prompt-label"></div>
+      <div class="game-prompt-target" id="game-prompt-target"></div>
+    </div>
+
+    <div class="game-input-row" id="game-input-row">
+      <input id="game-answer-input" type="text" autocomplete="off" data-i18n-ph="typePlaceholder" />
+      <button id="game-answer-submit" data-i18n="submit"></button>
+    </div>
+
+    <div class="game-feedback" id="game-feedback"></div>
+  </div>
+
+  <button class="game-fab" id="game-fab" title="Menu">☰</button>
+
+  <!-- ============================ RESULTS OVERLAY ========================== -->
+  <div class="overlay" id="results-overlay">
+    <div class="panel results-panel">
+      <h2 id="results-title"></h2>
+      <div class="result-hero">
+        <span id="results-accuracy">0%</span>
+        <small data-i18n="accuracy"></small>
+      </div>
+      <div class="result-grid">
+        <div><span id="results-solved"></span><small data-i18n="solved"></small></div>
+        <div><span id="results-points"></span><small data-i18n="points"></small></div>
+        <div><span id="results-time"></span><small data-i18n="time"></small></div>
+      </div>
+      <div class="best-box" id="results-best"></div>
+      <p class="save-note" id="results-save"></p>
+      <div class="result-actions">
+        <button class="link-btn" id="results-menu" data-i18n="backToMenu"></button>
+        <button class="link-btn" id="results-leaderboard" data-i18n="viewLeaderboard"></button>
+        <button class="btn-primary" id="results-again" data-i18n="playAgain"></button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================= STATS OVERLAY =========================== -->
+  <div class="overlay" id="stats-overlay">
+    <div class="panel wide-panel">
+      <div class="panel-head">
+        <h2 data-i18n="statsTitle"></h2>
+        <button class="link-btn" id="stats-back" data-i18n="back"></button>
+      </div>
+      <p class="muted" data-i18n="statsSubtitle"></p>
+      <div class="stats-grid" id="stats-grid"></div>
+    </div>
+  </div>
+
+  <!-- ========================== LEADERBOARD OVERLAY ======================== -->
+  <div class="overlay" id="leaderboard-overlay">
+    <div class="panel wide-panel">
+      <div class="panel-head">
+        <h2 data-i18n="leaderboardTitle"></h2>
+        <button class="link-btn" id="lb-back" data-i18n="back"></button>
+      </div>
+      <div class="lb-controls">
+        <div class="tab-switch small">
+          <button id="lb-tab-global" class="active" data-i18n="globalTab"></button>
+          <button id="lb-tab-my" data-i18n="myTab"></button>
+        </div>
+        <select id="lb-filter-mode">
+          <option value="all" data-i18n="all"></option>
+          <option value="gov" data-i18n="govOption"></option>
+          <option value="caza" data-i18n="cazaOption"></option>
+        </select>
+        <select id="lb-filter-input">
+          <option value="all" data-i18n="all"></option>
+          <option value="click" data-i18n="clickShort"></option>
+          <option value="type" data-i18n="typeShort"></option>
+        </select>
+      </div>
+      <div class="table-wrap">
+        <table class="lb-table">
+          <thead>
+            <tr>
+              <th data-i18n="rank"></th>
+              <th data-i18n="player"></th>
+              <th data-i18n="modeCol"></th>
+              <th data-i18n="accuracyCol"></th>
+              <th data-i18n="timeCol"></th>
+              <th data-i18n="pointsCol"></th>
+            </tr>
+          </thead>
+          <tbody id="lb-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
 </body>
 
 </html>

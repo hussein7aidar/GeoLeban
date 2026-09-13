@@ -14,6 +14,16 @@ const map = new maplibregl.Map({
   attributionControl: false,
 });
 
+function getResponsivePadding() {
+  const isMobile = window.innerWidth <= 600;
+  return {
+    top: isMobile ? 140 : 100,
+    bottom: isMobile ? 80 : 60,
+    left: isMobile ? 24 : 60,
+    right: isMobile ? 24 : 60,
+  };
+}
+
 map.on("style.load", () => {
   map.getStyle().layers.forEach((layer) => {
     if (layer.type === "symbol") {
@@ -30,7 +40,6 @@ map.on("style.load", () => {
   updateLayerVisibilities();
   updateHud();
 
-  // Initialize with the whole map overview
   populateDropdown(DEFAULT_SELECTION);
   selectItem(DEFAULT_SELECTION);
 });
@@ -181,6 +190,9 @@ function setLanguage(lang) {
   updateUiText();
   const select = document.getElementById("item-select");
   populateDropdown(select.value);
+  if (typeof window.applyGameTranslations === "function") {
+    window.applyGameTranslations();
+  }
 }
 
 function updateUiText() {
@@ -210,7 +222,6 @@ function resolveFeatureKey(mode, targetName) {
       .replace(/[^a-z0-9]/g, "");
 
   const normTarget = clean(targetName);
-
   const exactNormalized = available.find((k) => clean(k) === normTarget);
   if (exactNormalized) return exactNormalized;
 
@@ -235,7 +246,6 @@ function setMode(mode) {
 
   updateLayerVisibilities();
 
-  // Reset dropdown and view back to whole country
   populateDropdown(DEFAULT_SELECTION);
   selectItem(DEFAULT_SELECTION);
 }
@@ -289,7 +299,7 @@ function selectItem(name) {
   if (!map.getLayer(`${sourceId}-fill`)) return;
 
   if (resolvedName === "all") {
-    // Restore default opacity to all polygons and remove border focus ring
+    const currentDefaults = getResponsiveDefaults();
     map.setPaintProperty(`${sourceId}-fill`, "fill-opacity", 0.38);
     map.setFilter(`${sourceId}-focus-stroke`, [
       "==",
@@ -302,8 +312,8 @@ function selectItem(name) {
       "",
     ]);
     map.flyTo({
-      center: MAP_DEFAULTS.center,
-      zoom: MAP_DEFAULTS.zoom,
+      center: currentDefaults.center,
+      zoom: currentDefaults.zoom,
       pitch: 0,
       bearing: 0,
       duration: 1100,
@@ -311,7 +321,6 @@ function selectItem(name) {
     return;
   }
 
-  // Dim background polygons and spotlight selected polygon
   map.setPaintProperty(`${sourceId}-fill`, "fill-opacity", [
     "case",
     [
@@ -343,7 +352,7 @@ function selectItem(name) {
   if (feat) {
     const bounds = getBounds(feat.geometry.coordinates);
     map.fitBounds(bounds, {
-      padding: { top: 110, bottom: 80, left: 80, right: 80 },
+      padding: getResponsivePadding(),
       duration: 1100,
       essential: true,
     });
@@ -354,9 +363,10 @@ function resetView() {
   const selectedName = document.getElementById("item-select").value;
 
   if (!selectedName || selectedName === "all") {
+    const currentDefaults = getResponsiveDefaults();
     map.easeTo({
-      center: MAP_DEFAULTS.center,
-      zoom: MAP_DEFAULTS.zoom,
+      center: currentDefaults.center,
+      zoom: currentDefaults.zoom,
       pitch: 0,
       bearing: 0,
       duration: 900,
@@ -368,7 +378,7 @@ function resetView() {
   if (feat) {
     const bounds = getBounds(feat.geometry.coordinates);
     map.fitBounds(bounds, {
-      padding: { top: 110, bottom: 80, left: 80, right: 80 },
+      padding: getResponsivePadding(),
       pitch: 0,
       bearing: 0,
       duration: 900,
@@ -376,3 +386,130 @@ function resetView() {
     });
   }
 }
+
+// Adjust camera zoom dynamically on screen rotation / resize if on Overview
+window.addEventListener("resize", () => {
+  const selected = document.getElementById("item-select")?.value;
+  if (selected === "all" || !selected) {
+    const defaults = getResponsiveDefaults();
+    map.easeTo({ zoom: defaults.zoom, duration: 300 });
+  }
+});
+
+/* ============================ Game map glue ============================= */
+/* Helpers consumed by js/game.js: highlight called/revealed regions and
+   forward map clicks while a "click the region" round is running. */
+
+let gameActive = false;
+const gameMarks = {};
+let gameLayersReady = false;
+
+function extractFeatureName(props) {
+  if (!props) return "";
+  return props.shapeName || props.admin1Name || props.admin2Name || "";
+}
+
+function getFeatureNamesForMode(mode) {
+  return Object.keys(featuresByName[mode] || {});
+}
+
+function initGameLayers() {
+  if (gameLayersReady) return;
+  if (!map.isStyleLoaded()) return;
+
+  if (!map.getSource("game-highlight")) {
+    map.addSource("game-highlight", {
+      type: "geojson",
+      data: { type: "FeatureCollection", features: [] },
+    });
+  }
+
+  const stateColor = [
+    "match",
+    ["get", "_state"],
+    "target",
+    "#f59e0b",
+    "correct",
+    "#10b981",
+    "wrong",
+    "#ef4444",
+    "#f59e0b",
+  ];
+
+  if (!map.getLayer("game-highlight-fill")) {
+    map.addLayer({
+      id: "game-highlight-fill",
+      type: "fill",
+      source: "game-highlight",
+      paint: { "fill-color": stateColor, "fill-opacity": 0.55 },
+    });
+  }
+
+  if (!map.getLayer("game-highlight-line")) {
+    map.addLayer({
+      id: "game-highlight-line",
+      type: "line",
+      source: "game-highlight",
+      paint: { "line-color": stateColor, "line-width": 3, "line-opacity": 1 },
+    });
+  }
+
+  gameLayersReady = true;
+}
+
+function refreshGameSource() {
+  if (!gameLayersReady) initGameLayers();
+  if (!gameLayersReady || !map.getSource("game-highlight")) return;
+  const features = [];
+  Object.keys(gameMarks).forEach((name) => {
+    const feat = featuresByName[currentMode][name];
+    if (!feat) return;
+    features.push({
+      type: "Feature",
+      geometry: feat.geometry,
+      properties: Object.assign({}, feat.properties, {
+        _state: gameMarks[name],
+      }),
+    });
+  });
+  map.getSource("game-highlight").setData({
+    type: "FeatureCollection",
+    features,
+  });
+}
+
+function gameMark(name, state) {
+  if (!name) return;
+  gameMarks[name] = state;
+  refreshGameSource();
+}
+
+function gameClearMarks() {
+  Object.keys(gameMarks).forEach((k) => delete gameMarks[k]);
+  refreshGameSource();
+}
+
+function setGameActive(on) {
+  gameActive = on;
+  document.body.classList.toggle("playing", on);
+  if (on) {
+    initGameLayers();
+    setBaseFillDim(true);
+  } else {
+    gameClearMarks();
+    setBaseFillDim(false);
+  }
+}
+
+function setBaseFillDim(dim) {
+  const sourceId = currentMode === "gov" ? "lebanon-govs" : "lebanon-cazas";
+  const layerId = `${sourceId}-fill`;
+  if (map.getLayer(layerId)) {
+    map.setPaintProperty(layerId, "fill-opacity", dim ? 0.16 : 0.38);
+  }
+}
+
+map.on("click", (e) => {
+  if (!gameActive) return;
+  if (typeof handleGameMapClick === "function") handleGameMapClick(e);
+});

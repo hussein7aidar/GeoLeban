@@ -15,11 +15,16 @@ const PALETTE = [
   "#6366f1",
 ];
 
-const MAP_DEFAULTS = {
-  center: [35.86, 33.88],
-  zoom: 7.9,
-  pitch: 0,
-  bearing: 0,
-  maxPitch: 65,
-  style: "https://tiles.openfreemap.org/styles/positron",
-};
+function getResponsiveDefaults() {
+  const isMobile = window.innerWidth <= 600;
+  return {
+    center: [35.86, 33.88],
+    zoom: isMobile ? 7.2 : 7.9,
+    pitch: 0,
+    bearing: 0,
+    maxPitch: 65,
+    style: "https://tiles.openfreemap.org/styles/positron",
+  };
+}
+
+const MAP_DEFAULTS = getResponsiveDefaults();
