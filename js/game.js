@@ -96,6 +96,7 @@
     "stats-overlay",
     "leaderboard-overlay",
     "account-overlay",
+    "admin-overlay",
   ];
 
   // Curated, recognizable places used by the "Famous Cities/Villages" sub-mode.
@@ -312,6 +313,7 @@
 
   let authMode = "login";
   let lastShownPoints = -1;
+  let adminLoginPending = false;
   let setupMode = "gov";
   let setupInput = "click";
   let setupArea = "district"; // city mode only: "district" | "pick"
@@ -537,24 +539,69 @@
 
   async function handleAuthSubmit(e) {
     e.preventDefault();
-    const email = $("auth-email").value.trim();
+    const raw = $("auth-email").value.trim();
     const password = $("auth-password").value;
     const name = $("auth-name").value.trim();
+    const looksLikeEmail = isValidEmail(raw);
 
     showAuthError("");
-    if (authMode === "signup" && !name) return showAuthError(t("nameRequired"));
-    if (!isValidEmail(email)) return showAuthError(t("emailInvalid"));
-    if (password.length < 6) return showAuthError(t("passShort"));
 
+    if (authMode === "signup") {
+      if (!name) return showAuthError(t("nameRequired"));
+      if (!looksLikeEmail) return showAuthError(t("emailInvalid"));
+      if (password.length < 6) return showAuthError(t("passShort"));
+      setAuthBusy(true);
+      try {
+        await Backend.signUp(name, raw, password);
+        $("auth-password").value = "";
+      } catch (err) {
+        console.warn("[GeoLeban] Auth error", err);
+        showAuthError(mapAuthError(err));
+      } finally {
+        setAuthBusy(false);
+      }
+      return;
+    }
+
+    // A non-email "username" is treated as an admin login.
+    if (!looksLikeEmail) return handleAdminLogin(raw, password);
+
+    if (password.length < 6) return showAuthError(t("passShort"));
     setAuthBusy(true);
     try {
-      if (authMode === "signup") await Backend.signUp(name, email, password);
-      else await Backend.signIn(email, password);
+      await Backend.signIn(raw, password);
       $("auth-password").value = "";
     } catch (err) {
       console.warn("[GeoLeban] Auth error", err);
       showAuthError(mapAuthError(err));
     } finally {
+      setAuthBusy(false);
+    }
+  }
+
+  // Admin login: "username" maps to "<username>@geoleban.app" and must exist in
+  // the "admins" collection.
+  async function handleAdminLogin(username, password) {
+    const clean = (username || "").trim().toLowerCase();
+    if (!clean) return showAuthError(t("emailInvalid"));
+    adminLoginPending = true;
+    setAuthBusy(true);
+    try {
+      await Backend.signIn(clean + "@geoleban.app", password);
+      const user = Backend.getCurrentUser();
+      const admin = user ? await Backend.isAdmin(user.uid) : false;
+      if (!admin) {
+        await Backend.signOut();
+        showAuthError(t("notAdmin"));
+        return;
+      }
+      $("auth-password").value = "";
+      openAdminPortal();
+    } catch (err) {
+      console.warn("[GeoLeban] Admin login failed", err);
+      showAuthError(mapAuthError(err));
+    } finally {
+      adminLoginPending = false;
       setAuthBusy(false);
     }
   }
@@ -571,11 +618,18 @@
         applyPreferences(user.prefs);
       }
       if (wasActive) return; // keep playing
+      // handleAdminLogin handles the destination while an admin login is running.
+      if (adminLoginPending) return;
       // Go to the menu after a fresh login / signup, but don't yank the user
       // away from another panel (stats, leaderboard, setup) if they are
-      // already browsing it.
+      // already browsing it. Admins go straight to the admin portal.
       const onAuthScreen = $("auth-overlay").classList.contains("active");
-      if (onAuthScreen || !isAnyPanelOpen()) showOverlay("menu-overlay");
+      if (onAuthScreen || !isAnyPanelOpen()) {
+        Backend.isAdmin(user.uid).then((admin) => {
+          if (admin) openAdminPortal();
+          else showOverlay("menu-overlay");
+        });
+      }
     } else {
       if (wasActive) quitGame(true);
       showOverlay("auth-overlay");
@@ -680,6 +734,151 @@
     }
   }
 
+  /* -------------------------------- Admin --------------------------------- */
+
+  function setAdminMsg(id, text, ok) {
+    const el = $(id);
+    if (!el) return;
+    el.className = "form-error" + (ok ? " ok" : "");
+    el.textContent = text || "";
+  }
+
+  function openAdminPortal() {
+    showOverlay("admin-overlay");
+    $("admin-who").textContent = state.user ? state.user.email || "" : "";
+    setAdminMsg("admin-users-msg", "");
+    setAdminMsg("admin-block-msg", "");
+    setAdminMsg("admin-cred-msg", "");
+    renderAdmin();
+  }
+
+  async function renderAdmin() {
+    const body = $("admin-users-body");
+    if (!body) return;
+    body.innerHTML = "";
+    let users = [];
+    let blocked = [];
+    try {
+      users = await Backend.adminListProfiles();
+    } catch (e) {
+      console.warn("[GeoLeban] Admin list failed", e);
+      setAdminMsg("admin-users-msg", t("genericError"));
+      return;
+    }
+    try {
+      blocked = await Backend.adminListBlocked();
+    } catch (e) {
+      blocked = [];
+    }
+    const blockedSet = new Set(
+      (blocked || []).map((b) => (b.email || b.id || "").toLowerCase()),
+    );
+    users.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+    users.forEach((u) => body.appendChild(adminUserRow(u, blockedSet)));
+    if (!users.length) {
+      const tr = document.createElement("tr");
+      const td = document.createElement("td");
+      td.colSpan = 5;
+      td.className = "empty";
+      td.textContent = t("adminNoUsers");
+      tr.appendChild(td);
+      body.appendChild(tr);
+    }
+  }
+
+  function adminUserRow(u, blockedSet) {
+    const email = (u.email || "").toLowerCase();
+    const isBlocked = blockedSet.has(email);
+    const tr = document.createElement("tr");
+    const cell = (text) => {
+      const td = document.createElement("td");
+      td.textContent = text;
+      return td;
+    };
+    tr.appendChild(cell(u.name || "\u2014"));
+    tr.appendChild(cell(email || "\u2014"));
+    tr.appendChild(
+      cell(u.createdAt ? new Date(u.createdAt).toLocaleDateString() : "\u2014"),
+    );
+    const status = cell(isBlocked ? t("adminBlocked") : t("adminActive"));
+    if (isBlocked) status.style.color = "#ef4444";
+    tr.appendChild(status);
+
+    const actions = document.createElement("td");
+    const toggle = document.createElement("button");
+    toggle.className = "link-btn";
+    toggle.textContent = isBlocked ? t("adminUnblock") : t("adminBlockBtn");
+    toggle.addEventListener("click", () =>
+      isBlocked ? adminUnblock(email) : adminBlock(email),
+    );
+    actions.appendChild(toggle);
+
+    const del = document.createElement("button");
+    del.className = "link-btn";
+    del.style.color = "#ef4444";
+    del.textContent = t("adminDelete");
+    del.addEventListener("click", () => adminDeleteUser(u.uid, email));
+    actions.appendChild(del);
+    tr.appendChild(actions);
+    return tr;
+  }
+
+  async function adminBlock(email) {
+    try {
+      await Backend.adminBlockEmail(email);
+      setAdminMsg("admin-block-msg", "");
+      renderAdmin();
+    } catch (e) {
+      setAdminMsg("admin-block-msg", t("emailInvalid"));
+    }
+  }
+
+  async function adminUnblock(email) {
+    try {
+      await Backend.adminUnblockEmail(email);
+      renderAdmin();
+    } catch (e) {
+      setAdminMsg("admin-users-msg", t("genericError"));
+    }
+  }
+
+  async function adminDeleteUser(uid, email) {
+    const ok = await showConfirm({
+      title: t("adminDelete"),
+      message: (email || uid) + "?",
+    });
+    if (!ok) return;
+    try {
+      await Backend.adminDeleteUser(uid, email);
+      setAdminMsg("admin-users-msg", "");
+      renderAdmin();
+    } catch (e) {
+      setAdminMsg("admin-users-msg", t("genericError"));
+    }
+  }
+
+  async function adminSaveCreds() {
+    const cur = $("admin-cred-current").value;
+    const uname = $("admin-cred-username").value.trim();
+    const pass = $("admin-cred-password").value;
+    if (!cur) return setAdminMsg("admin-cred-msg", t("currentPasswordRequired"));
+    if (!uname && !pass) return setAdminMsg("admin-cred-msg", t("genericError"));
+    if (pass && pass.length < 6) {
+      return setAdminMsg("admin-cred-msg", t("passShort"));
+    }
+    try {
+      await Backend.adminUpdateCredentials(cur, uname, pass);
+      $("admin-cred-current").value = "";
+      $("admin-cred-username").value = "";
+      $("admin-cred-password").value = "";
+      setAdminMsg("admin-cred-msg", t("passwordUpdated"), true);
+      $("admin-who").textContent =
+        (Backend.getCurrentUser() || {}).email || "";
+    } catch (e) {
+      setAdminMsg("admin-cred-msg", mapAccountError(e));
+    }
+  }
+
   /* -------------------------------- Menu ---------------------------------- */
 
   function openMenu() {
@@ -762,10 +961,14 @@
   function updateCustomNote() {
     const note = $("setup-custom-note");
     if (!note) return;
-    // Only Pick-on-map rounds are private: warn that their results stay on the
-    // player's side (Custom tab) and never reach the leaderboard.
-    const show = setupMode === "city" && setupArea === "pick";
-    note.style.display = show ? "" : "none";
+    const total = districtCount(setupDistrict);
+    const count = Number(($("setup-count") || {}).value) || total;
+    // Custom rounds are private: pick-on-map, or fewer than the whole district.
+    const show =
+      setupMode === "city" &&
+      (setupArea === "pick" ||
+        (setupArea === "district" && total > 0 && count < total));
+    note.style.display = show ? "block" : "none";
   }
 
   function syncSetupUi() {
@@ -1693,6 +1896,11 @@
     $("account-back").addEventListener("click", () => showOverlay("menu-overlay"));
     $("account-name-form").addEventListener("submit", handleNameSubmit);
     $("account-pass-form").addEventListener("submit", handlePasswordSubmit);
+    $("admin-logout").addEventListener("click", handleLogout);
+    $("admin-block-btn").addEventListener("click", () =>
+      adminBlock($("admin-block-email").value),
+    );
+    $("admin-cred-save").addEventListener("click", adminSaveCreds);
     $("btn-main-menu").addEventListener("click", openMenu);
 
     $("select-start").addEventListener("click", finishSelection);

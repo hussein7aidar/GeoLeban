@@ -267,7 +267,7 @@
         </div>
       </div>
 
-      <p class="setup-note" id="setup-custom-note" data-i18n="pickNote"></p>
+      <p class="setup-note" id="setup-custom-note" data-i18n="privateNote"></p>
 
       <div class="setup-group">
         <label data-i18n="inputLabel"></label>
@@ -451,6 +451,50 @@
         <p class="form-error" id="account-pass-error"></p>
         <button type="submit" class="btn-primary" id="account-pass-save" data-i18n="savePassword"></button>
       </form>
+    </div>
+  </div>
+
+  <!-- ============================= ADMIN OVERLAY =========================== -->
+  <div class="overlay" id="admin-overlay">
+    <div class="panel wide-panel">
+      <div class="panel-head">
+        <h2 data-i18n="adminTitle"></h2>
+        <button class="link-btn" id="admin-logout" data-i18n="menuLogout"></button>
+      </div>
+      <p class="muted" id="admin-who"></p>
+
+      <h3 class="admin-h" data-i18n="adminUsers"></h3>
+      <p class="form-error" id="admin-users-msg"></p>
+      <div class="table-wrap">
+        <table class="lb-table">
+          <thead>
+            <tr>
+              <th data-i18n="adminName"></th>
+              <th data-i18n="adminEmail"></th>
+              <th data-i18n="adminCreated"></th>
+              <th data-i18n="adminStatus"></th>
+              <th data-i18n="adminActions"></th>
+            </tr>
+          </thead>
+          <tbody id="admin-users-body"></tbody>
+        </table>
+      </div>
+
+      <h3 class="admin-h" data-i18n="adminBlock"></h3>
+      <div class="admin-row">
+        <input id="admin-block-email" type="email" placeholder="email@example.com" />
+        <button class="btn-primary" id="admin-block-btn" data-i18n="adminBlockBtn"></button>
+      </div>
+      <p class="form-error" id="admin-block-msg"></p>
+
+      <h3 class="admin-h" data-i18n="adminCreds"></h3>
+      <div class="admin-row">
+        <input id="admin-cred-current" type="password" data-i18n-ph="currentPassword" />
+        <input id="admin-cred-username" type="text" data-i18n-ph="adminNewUsername" />
+        <input id="admin-cred-password" type="password" data-i18n-ph="newPassword" />
+        <button class="btn-primary" id="admin-cred-save" data-i18n="adminSave"></button>
+      </div>
+      <p class="form-error" id="admin-cred-msg"></p>
     </div>
   </div>
 

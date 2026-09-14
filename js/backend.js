@@ -597,6 +597,92 @@ const Backend = (function () {
     return true;
   }
 
+  /* ------------------------------ Admin API ------------------------------- */
+
+  async function isAdmin(uid) {
+    if (mode !== "firebase" || !uid) return false;
+    try {
+      const doc = await fbDb.collection("admins").doc(uid).get();
+      return doc.exists;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  async function adminListProfiles() {
+    await init();
+    const snap = await fbDb.collection("profiles").get();
+    return snap.docs.map((d) => Object.assign({ uid: d.id }, d.data()));
+  }
+
+  async function adminListBlocked() {
+    await init();
+    const snap = await fbDb.collection("blockedEmails").get();
+    return snap.docs.map((d) => Object.assign({ id: d.id }, d.data()));
+  }
+
+  async function adminBlockEmail(email) {
+    await init();
+    const clean = (email || "").trim().toLowerCase();
+    if (!clean || clean.indexOf("@") === -1) {
+      const err = new Error("Invalid email");
+      err.code = "app/invalid-email";
+      throw err;
+    }
+    await fbDb.collection("blockedEmails").doc(clean).set({
+      email: clean,
+      blockedAt: Date.now(),
+      by: currentUser ? currentUser.email : "",
+    });
+    return clean;
+  }
+
+  async function adminUnblockEmail(email) {
+    await init();
+    const clean = (email || "").trim().toLowerCase();
+    await fbDb.collection("blockedEmails").doc(clean).delete();
+    return clean;
+  }
+
+  async function adminDeleteUser(uid, email) {
+    await init();
+    if (!uid) return;
+    const snap = await fbDb
+      .collection(FIRESTORE_RESULTS)
+      .where("uid", "==", uid)
+      .get();
+    const refs = snap.docs.map((d) => d.ref);
+    for (let i = 0; i < refs.length; i += 450) {
+      const batch = fbDb.batch();
+      refs.slice(i, i + 450).forEach((ref) => batch.delete(ref));
+      await batch.commit();
+    }
+    await fbDb.collection(FIRESTORE_PROFILES).doc(uid).delete();
+    if (email) await adminBlockEmail(email);
+  }
+
+  async function adminUpdateCredentials(currentPassword, newUsername, newPassword) {
+    await init();
+    const user = fbAuth.currentUser;
+    if (!user) {
+      const err = new Error("Not signed in");
+      err.code = "app/not-signed-in";
+      throw err;
+    }
+    const cred = firebase.auth.EmailAuthProvider.credential(
+      user.email,
+      currentPassword || "",
+    );
+    await user.reauthenticateWithCredential(cred);
+    const uname = (newUsername || "").trim().toLowerCase();
+    if (uname) await user.updateEmail(uname + "@" + "geoleban.app");
+    if (newPassword) await user.updatePassword(newPassword);
+    if (uname) {
+      currentUser.email = uname + "@geoleban.app";
+    }
+    return true;
+  }
+
   return {
     init,
     onAuthChange,
@@ -612,5 +698,12 @@ const Backend = (function () {
     savePreferences,
     updateName,
     updatePassword,
+    isAdmin,
+    adminListProfiles,
+    adminListBlocked,
+    adminBlockEmail,
+    adminUnblockEmail,
+    adminDeleteUser,
+    adminUpdateCredentials,
   };
 })();

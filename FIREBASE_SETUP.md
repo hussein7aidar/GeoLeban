@@ -156,7 +156,10 @@ Then open <http://localhost:8000>.
 
 ## 8. Admin portal (optional)
 
-`admin.html` is a small standalone page (no map, no game) that lets an admin:
+The admin portal is built into the game's **own login form** — there is no
+separate page. Log in with the admin **username** and **password** (a username,
+not an email) and the admin dashboard opens instead of the player menu. It lets
+an admin:
 
 - see the registered users (name + email),
 - block / unblock an email (blocked emails can't sign in or sign up),
@@ -173,9 +176,11 @@ Then open <http://localhost:8000>.
 3. In **Firestore Database**, create a collection named `admins`, add a document
    whose **document ID is that UID**, and give it any field (e.g. `admin` = `true`).
 4. Publish the rules from step 5 (they use the `admins` collection).
-5. Open `admin.html` (locally, or at
-   `https://<your-username>.github.io/GeoLeban/admin.html`) and log in with
-   `username` / `password`.
+5. On the site, in the normal login form enter the username `username` and the
+   password `password`, then log in — the admin portal opens.
+
+> Regular players keep logging in with their **email** and password. If the login
+> field has no `@`, the game treats it as an admin username.
 
 > **Note:** the page is client-only. "Delete" removes the user's profile and
 > results and blocks their email; it does **not** delete the Firebase Auth login
