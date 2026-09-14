@@ -633,6 +633,16 @@ select:hover {
   margin-bottom: 8px;
 }
 
+.form-error.ok {
+  color: #10b981;
+}
+
+.account-divider {
+  height: 1px;
+  background: var(--panel-border);
+  margin: 18px 0;
+}
+
 .btn-primary {
   width: 100%;
   background: var(--accent);
@@ -819,6 +829,7 @@ select:hover {
 }
 
 .game-stat {
+  display: inline-block;
   font-size: 0.8rem;
   font-weight: 800;
   color: var(--text);
@@ -846,8 +857,9 @@ select:hover {
   color: #ef4444;
 }
 
-/* Restart-the-round icon button in the game HUD */
-.game-restart {
+/* Restart / sound icon buttons in the game HUD */
+.game-restart,
+.game-sound {
   background: transparent;
   border: 1px solid var(--panel-border);
   color: var(--text);
@@ -862,12 +874,23 @@ select:hover {
   flex-shrink: 0;
 }
 
-.game-restart:hover {
+.game-restart:hover,
+.game-sound:hover {
   border-color: var(--accent);
   color: var(--accent);
 }
 
-.game-restart svg {
+.game-sound.muted {
+  color: var(--pill-text);
+  opacity: 0.7;
+}
+
+.game-sound.muted .sound-waves {
+  display: none;
+}
+
+.game-restart svg,
+.game-sound svg {
   width: 16px;
   height: 16px;
   stroke: currentColor;
@@ -981,6 +1004,124 @@ select:hover {
   100% {
     opacity: 0;
     transform: translate(-50%, -50%) scale(1);
+  }
+}
+
+/* Animated targeting cursor shown while clicking/picking on the map */
+.game-cursor {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 44px;
+  height: 44px;
+  pointer-events: none;
+  z-index: 46;
+  display: none;
+  will-change: transform;
+}
+
+.game-cursor.active {
+  display: block;
+}
+
+.game-cursor-ring {
+  position: absolute;
+  inset: 0;
+  border: 2px solid var(--accent);
+  border-radius: 50%;
+  box-shadow: 0 0 12px rgba(2, 132, 199, 0.4);
+  animation: cursor-pulse 1.1s ease-out infinite;
+}
+
+.game-cursor-dot {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  margin: -3px 0 0 -3px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 10px var(--accent);
+}
+
+.game-cursor.flash-correct .game-cursor-ring {
+  border-color: #10b981;
+}
+
+.game-cursor.flash-correct .game-cursor-dot {
+  background: #10b981;
+}
+
+.game-cursor.flash-wrong .game-cursor-ring {
+  border-color: #ef4444;
+}
+
+.game-cursor.flash-wrong .game-cursor-dot {
+  background: #ef4444;
+}
+
+@keyframes cursor-pulse {
+  0% {
+    transform: scale(0.55);
+    opacity: 1;
+  }
+  70% {
+    opacity: 0.5;
+  }
+  100% {
+    transform: scale(1.15);
+    opacity: 0;
+  }
+}
+
+/* Score bump when points increase */
+.game-stat.pop {
+  animation: score-pop 0.45s cubic-bezier(0.2, 1.4, 0.4, 1);
+  color: #10b981;
+}
+
+@keyframes score-pop {
+  0% {
+    transform: scale(1);
+  }
+  45% {
+    transform: scale(1.35);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+/* Confetti on a new best / perfect round */
+.confetti-piece {
+  position: fixed;
+  top: -14px;
+  width: 9px;
+  height: 14px;
+  border-radius: 2px;
+  opacity: 0.95;
+  z-index: 65;
+  pointer-events: none;
+  animation: confetti-fall 2.9s cubic-bezier(0.3, 0.6, 0.5, 1) forwards;
+}
+
+@keyframes confetti-fall {
+  0% {
+    transform: translate3d(0, 0, 0) rotate(0deg);
+    opacity: 1;
+  }
+  100% {
+    transform: translate3d(var(--dx, 0px), 106vh, 0) rotate(var(--rot, 360deg));
+    opacity: 0.9;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .game-cursor-ring,
+  .game-stat.pop,
+  .confetti-piece {
+    animation: none !important;
   }
 }
 

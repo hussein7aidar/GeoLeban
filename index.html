@@ -129,7 +129,6 @@
     <div class="panel auth-panel">
       <div class="brand brand-stacked">
         <img class="brand-logo brand-logo-lg" src="./assets/logo.jpg" alt="GeoLeban" />
-        <h1 data-i18n="title"></h1>
         <p class="muted" data-i18n="subtitle"></p>
       </div>
 
@@ -179,6 +178,9 @@
         </button>
         <button class="menu-item" id="menu-explore">
           <span class="menu-icon">◎</span><span data-i18n="menuExplore"></span>
+        </button>
+        <button class="menu-item" id="menu-account">
+          <span class="menu-icon">👤</span><span data-i18n="menuAccount"></span>
         </button>
       </div>
 
@@ -304,6 +306,12 @@
       <span class="game-stat" id="game-tries"></span>
       <span class="game-stat" id="game-accuracy"></span>
       <span class="game-stat" id="game-score"></span>
+      <button class="game-sound" id="game-sound" data-i18n-title="soundOn">
+        <svg viewBox="0 0 24 24">
+          <path d="M11 5 6 9H3v6h3l5 4V5z" />
+          <path class="sound-waves" d="M15.5 8.5a5 5 0 0 1 0 7M18.5 6a8 8 0 0 1 0 12" />
+        </svg>
+      </button>
       <button class="game-restart" id="game-restart" data-i18n-title="restart">
         <svg viewBox="0 0 24 24">
           <path d="M21 12a9 9 0 1 1-2.64-6.36M21 3v6h-6" />
@@ -326,6 +334,11 @@
   </div>
 
   <div class="game-flash" id="game-flash"></div>
+
+  <div class="game-cursor" id="game-cursor" aria-hidden="true">
+    <span class="game-cursor-ring"></span>
+    <span class="game-cursor-dot"></span>
+  </div>
 
   <!-- ========================= MAP TOAST + SELECT BAR ====================== -->
   <div class="map-toast" id="map-toast"></div>
@@ -404,6 +417,40 @@
           <tbody id="lb-body"></tbody>
         </table>
       </div>
+    </div>
+  </div>
+
+  <!-- ============================ ACCOUNT OVERLAY ========================== -->
+  <div class="overlay" id="account-overlay">
+    <div class="panel">
+      <div class="panel-head">
+        <h2 data-i18n="accountTitle"></h2>
+        <button class="link-btn" id="account-back" data-i18n="back"></button>
+      </div>
+
+      <form id="account-name-form" novalidate>
+        <div class="field">
+          <label for="account-name" data-i18n="fullName"></label>
+          <input id="account-name" type="text" autocomplete="name" />
+        </div>
+        <p class="form-error" id="account-name-error"></p>
+        <button type="submit" class="btn-primary" id="account-name-save" data-i18n="saveName"></button>
+      </form>
+
+      <div class="account-divider"></div>
+
+      <form id="account-pass-form" novalidate>
+        <div class="field">
+          <label for="account-current-pass" data-i18n="currentPassword"></label>
+          <input id="account-current-pass" type="password" autocomplete="current-password" />
+        </div>
+        <div class="field">
+          <label for="account-new-pass" data-i18n="newPassword"></label>
+          <input id="account-new-pass" type="password" autocomplete="new-password" />
+        </div>
+        <p class="form-error" id="account-pass-error"></p>
+        <button type="submit" class="btn-primary" id="account-pass-save" data-i18n="savePassword"></button>
+      </form>
     </div>
   </div>
 

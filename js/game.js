@@ -95,6 +95,7 @@
     "results-overlay",
     "stats-overlay",
     "leaderboard-overlay",
+    "account-overlay",
   ];
 
   // Curated, recognizable places used by the "Famous Cities/Villages" sub-mode.
@@ -171,6 +172,117 @@
     "Afqa Jbayl",
   ];
 
+  /* ------------------------------ Sound effects --------------------------- */
+
+  // Tiny WebAudio synth so the game has feedback without shipping audio files.
+  const Sfx = (function () {
+    let ctx = null;
+    let muted = false;
+
+    function ensure() {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return null;
+      if (!ctx) ctx = new AC();
+      if (ctx.state === "suspended") ctx.resume();
+      return ctx;
+    }
+
+    function beep(freq, start, dur, type, vol) {
+      const ac = ensure();
+      if (!ac) return;
+      const t0 = ac.currentTime + start;
+      const osc = ac.createOscillator();
+      const gain = ac.createGain();
+      osc.type = type || "sine";
+      osc.frequency.setValueAtTime(freq, t0);
+      gain.gain.setValueAtTime(0.0001, t0);
+      gain.gain.exponentialRampToValueAtTime(vol || 0.1, t0 + 0.012);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+      osc.connect(gain).connect(ac.destination);
+      osc.start(t0);
+      osc.stop(t0 + dur + 0.03);
+    }
+
+    return {
+      setMuted(v) {
+        muted = !!v;
+      },
+      isMuted() {
+        return muted;
+      },
+      correct() {
+        if (muted) return;
+        beep(659, 0, 0.12, "sine", 0.11);
+        beep(988, 0.09, 0.18, "sine", 0.11);
+      },
+      wrong() {
+        if (muted) return;
+        beep(233, 0, 0.16, "sawtooth", 0.07);
+        beep(155, 0.09, 0.22, "sawtooth", 0.07);
+      },
+      reveal() {
+        if (muted) return;
+        beep(440, 0, 0.14, "triangle", 0.09);
+        beep(330, 0.11, 0.2, "triangle", 0.09);
+      },
+      tick() {
+        if (muted) return;
+        beep(880, 0, 0.05, "square", 0.04);
+      },
+      complete() {
+        if (muted) return;
+        [523, 659, 784, 1047].forEach((f, i) =>
+          beep(f, i * 0.11, 0.22, "sine", 0.11),
+        );
+      },
+      gameover() {
+        if (muted) return;
+        [392, 311, 262].forEach((f, i) =>
+          beep(f, i * 0.14, 0.26, "sawtooth", 0.07),
+        );
+      },
+    };
+  })();
+
+  /* ---------------------------- Animated cursor --------------------------- */
+
+  const cursorEl = $("game-cursor");
+  const CURSOR_HALF = 22;
+  let cursorFlashTimer = null;
+
+  function setCursorActive(on) {
+    if (!cursorEl) return;
+    cursorEl.classList.toggle("active", !!on);
+    const canvas = map.getCanvas();
+    if (canvas) canvas.style.cursor = on ? "none" : "";
+  }
+
+  function moveCursor(e) {
+    if (!cursorEl || !cursorEl.classList.contains("active")) return;
+    const x = e.clientX - CURSOR_HALF;
+    const y = e.clientY - CURSOR_HALF;
+    cursorEl.style.transform = "translate3d(" + x + "px," + y + "px,0)";
+  }
+
+  function flashCursor(kind) {
+    if (!cursorEl) return;
+    cursorEl.classList.remove("flash-correct", "flash-wrong");
+    if (kind) cursorEl.classList.add("flash-" + kind);
+    if (cursorFlashTimer) clearTimeout(cursorFlashTimer);
+    cursorFlashTimer = setTimeout(
+      () => cursorEl.classList.remove("flash-correct", "flash-wrong"),
+      450,
+    );
+  }
+
+  // Show the reticle only when the player is clicking/picking on the map; all
+  // other modes keep the normal arrow cursor.
+  function updateGameCursor() {
+    const active =
+      (state.active && state.input === "click") || !!selecting;
+    setCursorActive(active);
+  }
+
   /* -------------------------------- State --------------------------------- */
 
   const state = {
@@ -188,6 +300,7 @@
     startTime: 0,
     elapsedMs: 0,
     pausedMs: 0,
+    lastTickSec: -1,
     timerId: null,
     locked: false,
     inputLockUntil: 0,
@@ -198,6 +311,7 @@
   };
 
   let authMode = "login";
+  let lastShownPoints = -1;
   let setupMode = "gov";
   let setupInput = "click";
   let setupArea = "district"; // city mode only: "district" | "pick"
@@ -329,6 +443,7 @@
     qsa("[data-i18n-title]").forEach((el) => {
       el.setAttribute("title", t(el.getAttribute("data-i18n-title")));
     });
+    syncSoundButton();
     syncAuthModeUI();
     syncSetupUi();
     updateModeNotes();
@@ -361,9 +476,18 @@
     if (!prefs) return;
     if (prefs.theme) setTheme(prefs.theme);
     if (prefs.language) setLanguage(prefs.language);
+    if (typeof prefs.sound === "boolean") Sfx.setMuted(prefs.sound);
+    syncSoundButton();
     // Map labels are always hidden: the base style's Arabic labels do not
     // render reliably, so the "Show map labels" toggle was removed from the
     // main menu.
+  }
+
+  function syncSoundButton() {
+    const b = $("game-sound");
+    if (!b) return;
+    b.classList.toggle("muted", Sfx.isMuted());
+    b.title = t(Sfx.isMuted() ? "soundOff" : "soundOn");
   }
 
   /* -------------------------------- Auth ---------------------------------- */
@@ -459,6 +583,100 @@
 
   function isAnyPanelOpen() {
     return OVERLAYS.some((id) => $(id) && $(id).classList.contains("active"));
+  }
+
+  /* ------------------------------- Account -------------------------------- */
+
+  function openAccount() {
+    if (!state.user) return;
+    $("account-name").value = state.user.name || "";
+    const nameErr = $("account-name-error");
+    nameErr.textContent = "";
+    nameErr.className = "form-error";
+    const passErr = $("account-pass-error");
+    passErr.textContent = "";
+    passErr.className = "form-error";
+    $("account-current-pass").value = "";
+    $("account-new-pass").value = "";
+    showOverlay("account-overlay");
+  }
+
+  function mapAccountError(err) {
+    const code = err && err.code;
+    if (
+      code === "auth/wrong-password" ||
+      code === "auth/invalid-credential" ||
+      code === "auth/invalid-login-credentials"
+    ) {
+      return t("wrongCurrentPassword");
+    }
+    if (code === "auth/weak-password") return t("passShort");
+    if (code === "auth/requires-recent-login") return t("requiresRecentLogin");
+    if (code === "app/name-required") return t("nameRequired");
+    return t("genericError");
+  }
+
+  async function handleNameSubmit(e) {
+    e.preventDefault();
+    const errEl = $("account-name-error");
+    const name = $("account-name").value.trim();
+    errEl.className = "form-error";
+    if (!name) {
+      errEl.textContent = t("nameRequired");
+      return;
+    }
+    errEl.textContent = "";
+    const btn = $("account-name-save");
+    btn.disabled = true;
+    try {
+      const user = await Backend.updateName(name);
+      state.user = user;
+      $("menu-user-name").textContent = user.name;
+      errEl.className = "form-error ok";
+      errEl.textContent = t("nameUpdated");
+      invalidateCaches();
+      if ($("leaderboard-overlay").classList.contains("active")) {
+        renderLeaderboard();
+      }
+    } catch (err) {
+      console.warn("[GeoLeban] Name update failed", err);
+      errEl.className = "form-error";
+      errEl.textContent = mapAccountError(err);
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  async function handlePasswordSubmit(e) {
+    e.preventDefault();
+    const errEl = $("account-pass-error");
+    const cur = $("account-current-pass").value;
+    const next = $("account-new-pass").value;
+    errEl.className = "form-error";
+    if (!cur) {
+      errEl.textContent = t("currentPasswordRequired");
+      return;
+    }
+    if (!next || next.length < 6) {
+      errEl.textContent = t("passShort");
+      return;
+    }
+    errEl.textContent = "";
+    const btn = $("account-pass-save");
+    btn.disabled = true;
+    try {
+      await Backend.updatePassword(cur, next);
+      $("account-current-pass").value = "";
+      $("account-new-pass").value = "";
+      errEl.className = "form-error ok";
+      errEl.textContent = t("passwordUpdated");
+    } catch (err) {
+      console.warn("[GeoLeban] Password update failed", err);
+      errEl.className = "form-error";
+      errEl.textContent = mapAccountError(err);
+    } finally {
+      btn.disabled = false;
+    }
   }
 
   /* -------------------------------- Menu ---------------------------------- */
@@ -741,6 +959,9 @@
     state.startTime = performance.now();
     state.elapsedMs = 0;
     state.pausedMs = 0;
+    state.lastTickSec = -1;
+    lastShownPoints = -1;
+    updateGameCursor();
     startTimer();
     nextQuestion();
   }
@@ -756,10 +977,11 @@
       return selecting;
     };
 
-    if (typeof setMode === "function") setMode("city");
+    if (typeof setMode === "function") setMode("city", { skipCamera: true });
     setGameActive(true);
     hideOverlays();
     setMapPainting(true);
+    updateGameCursor();
     if (typeof selectItem === "function") selectItem("all", { skipCamera: true });
     $("select-error").textContent = "";
     $("select-count").textContent = "0";
@@ -821,6 +1043,7 @@
     setGameActive(false);
     $("game-hud").classList.remove("active");
     window.isSelectingOnMap = null;
+    updateGameCursor();
   }
 
   map.on("mousedown", (e) => {
@@ -864,6 +1087,7 @@
     stopTimer();
     setGameActive(false);
     $("game-hud").classList.remove("active");
+    updateGameCursor();
     if (silent) showOverlay("auth-overlay");
     else showOverlay("menu-overlay");
   }
@@ -910,6 +1134,7 @@
     }
     refreshPromptText();
     updateGameHud();
+    updateGameCursor();
   }
 
   function refreshPromptText() {
@@ -937,6 +1162,15 @@
       t("question") + " " + shown + " / " + state.questions.length;
     $("game-tries").textContent = t("triesLeft") + ": " + state.triesLeft;
     $("game-score").textContent = t("points") + ": " + state.points;
+    if (state.points !== lastShownPoints) {
+      if (lastShownPoints >= 0 && state.points > lastShownPoints) {
+        const score = $("game-score");
+        score.classList.remove("pop");
+        void score.offsetWidth;
+        score.classList.add("pop");
+      }
+      lastShownPoints = state.points;
+    }
     $("game-accuracy").textContent =
       t("accuracy") + ": " + currentAccuracy() + "%";
     $("game-timer").textContent = timerText();
@@ -959,6 +1193,20 @@
         updateGameHud();
         endGame("timeout");
         return;
+      }
+      // Audible countdown for the last five seconds.
+      if (state.limitMs) {
+        const remaining = Math.ceil(
+          (state.limitMs - state.elapsedMs) / 1000,
+        );
+        if (
+          remaining <= 5 &&
+          remaining > 0 &&
+          remaining !== state.lastTickSec
+        ) {
+          state.lastTickSec = remaining;
+          Sfx.tick();
+        }
       }
       updateGameHud();
     }, 100);
@@ -1039,6 +1287,8 @@
     state.solved += 1;
     gameMark(state.current, "correct");
     flashGame("\u2713 " + displayName(state.current), "correct");
+    flashCursor("correct");
+    Sfx.correct();
     updateGameHud();
     // Move on immediately: the green mark persists for the round, so there is
     // no reason to hold the next question back and eat into the clock.
@@ -1061,11 +1311,15 @@
         t("revealAnswer") + ": " + displayName(state.current),
         "reveal",
       );
+      flashCursor("wrong");
+      Sfx.reveal();
       // Mark the place and move straight on; the flash tells the player the
       // answer without pausing the clock.
       state.index += 1;
       nextQuestion();
     } else {
+      flashCursor("wrong");
+      Sfx.wrong();
       setFeedback("wrong", t("wrong") + " — " + t("triesLeft") + ": " + state.triesLeft);
       if (state.input === "type") $("game-answer-input").select();
     }
@@ -1102,6 +1356,7 @@
     state.active = false;
     setGameActive(false);
     $("game-hud").classList.remove("active");
+    updateGameCursor();
 
     const total = state.questions.length;
     const accuracy = currentAccuracy();
@@ -1117,7 +1372,38 @@
       points: state.points,
       custom: !!state.custom,
     };
+    if (reason === "complete") Sfx.complete();
+    else Sfx.gameover();
     showResults(result, reason);
+  }
+
+  // Lightweight confetti burst for a perfect round / new personal best.
+  function celebrate() {
+    if (
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    ) {
+      return;
+    }
+    const colors = [
+      "#10b981",
+      "#f59e0b",
+      "#0284c7",
+      "#ef4444",
+      "#8b5cf6",
+      "#14b8a6",
+    ];
+    for (let i = 0; i < 70; i++) {
+      const p = document.createElement("span");
+      p.className = "confetti-piece";
+      p.style.left = Math.random() * 100 + "vw";
+      p.style.background = colors[i % colors.length];
+      p.style.setProperty("--dx", Math.random() * 180 - 90 + "px");
+      p.style.setProperty("--rot", Math.random() * 720 - 360 + "deg");
+      p.style.animationDelay = Math.random() * 0.35 + "s";
+      document.body.appendChild(p);
+      setTimeout(() => p.remove(), 3600);
+    }
   }
 
   async function showResults(result, reason) {
@@ -1158,6 +1444,9 @@
     }
 
     const isNewBest = !prevBest || result.points > prevBest.points;
+    if (result.accuracy >= 100 || (prevBest && result.points > prevBest.points)) {
+      celebrate();
+    }
     const bestPoints = isNewBest ? result.points : prevBest.points;
     const bestAccuracy = isNewBest ? result.accuracy : prevBest.accuracy;
     $("results-best").innerHTML =
@@ -1402,6 +1691,10 @@
     $("menu-leaderboard").addEventListener("click", () => openLeaderboard());
     $("menu-explore").addEventListener("click", hideOverlays);
     $("menu-logout").addEventListener("click", handleLogout);
+    $("menu-account").addEventListener("click", openAccount);
+    $("account-back").addEventListener("click", () => showOverlay("menu-overlay"));
+    $("account-name-form").addEventListener("submit", handleNameSubmit);
+    $("account-pass-form").addEventListener("submit", handlePasswordSubmit);
     $("btn-main-menu").addEventListener("click", openMenu);
 
     $("select-start").addEventListener("click", finishSelection);
@@ -1431,6 +1724,20 @@
     $("game-restart").addEventListener("click", (e) =>
       restartRound(anchorFromEvent(e)),
     );
+    $("game-sound").addEventListener("click", () => {
+      Sfx.setMuted(!Sfx.isMuted());
+      Backend.savePreferences({ sound: Sfx.isMuted() });
+      syncSoundButton();
+      if (!Sfx.isMuted()) Sfx.tick();
+    });
+
+    // Drive the animated reticle cursor while the player is on the map.
+    const canvasEl = map.getCanvas();
+    if (canvasEl) {
+      canvasEl.addEventListener("mousemove", moveCursor);
+      canvasEl.addEventListener("mouseenter", updateGameCursor);
+      canvasEl.addEventListener("mouseleave", () => setCursorActive(false));
+    }
     $("game-answer-submit").addEventListener("click", handleTypedSubmit);
     $("game-answer-input").addEventListener("keydown", (e) => {
       if (e.key === "Enter") {

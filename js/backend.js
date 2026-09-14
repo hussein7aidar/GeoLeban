@@ -450,6 +450,130 @@ const Backend = (function () {
     return merged;
   }
 
+  // Keeps the player's stored results in sync after a name change so the
+  // leaderboard shows the new name.
+  async function renameResults(uid, name) {
+    const locals = localResults();
+    let changed = false;
+    locals.forEach((r) => {
+      if (r.uid === uid && r.name !== name) {
+        r.name = name;
+        changed = true;
+      }
+    });
+    if (changed) writeJSON(LOCAL_RESULTS_KEY, locals);
+
+    if (mode !== "firebase") return;
+    try {
+      const snap = await fbDb
+        .collection(FIRESTORE_RESULTS)
+        .where("uid", "==", uid)
+        .get();
+      if (snap.empty) return;
+      const batch = fbDb.batch();
+      snap.docs.forEach((doc) => batch.update(doc.ref, { name: name }));
+      await batch.commit();
+    } catch (e) {
+      // Rules may forbid updating results; the new name still applies to new
+      // rounds, so don't fail the whole rename because of this.
+      console.warn("[GeoLeban] Could not rename past results.", e);
+    }
+  }
+
+  async function updateName(name) {
+    await init();
+    const clean = (name || "").trim();
+    if (!clean) {
+      const err = new Error("Name required");
+      err.code = "app/name-required";
+      throw err;
+    }
+    if (!currentUser) {
+      const err = new Error("Not signed in");
+      err.code = "app/not-signed-in";
+      throw err;
+    }
+    const uid = currentUser.uid;
+
+    if (mode === "firebase") {
+      if (fbAuth.currentUser) {
+        try {
+          await fbAuth.currentUser.updateProfile({ displayName: clean });
+        } catch (e) {
+          console.warn("[GeoLeban] Could not update auth profile.", e);
+        }
+      }
+      await fbDb
+        .collection(FIRESTORE_PROFILES)
+        .doc(uid)
+        .set({ name: clean }, { merge: true });
+    } else {
+      const users = readJSON(LOCAL_USERS_KEY, {});
+      Object.keys(users).forEach((email) => {
+        if (users[email].uid === uid) {
+          users[email].name = clean;
+          localStorage.setItem(LOCAL_SESSION_KEY, email);
+        }
+      });
+      writeJSON(LOCAL_USERS_KEY, users);
+    }
+
+    await renameResults(uid, clean);
+    currentUser.name = clean;
+    emit();
+    return currentUser;
+  }
+
+  async function updatePassword(currentPassword, newPassword) {
+    await init();
+    if (!currentUser) {
+      const err = new Error("Not signed in");
+      err.code = "app/not-signed-in";
+      throw err;
+    }
+    if (!newPassword || newPassword.length < 6) {
+      const err = new Error("Weak password");
+      err.code = "auth/weak-password";
+      throw err;
+    }
+
+    if (mode === "firebase") {
+      const user = fbAuth.currentUser;
+      if (!user) {
+        const err = new Error("Not signed in");
+        err.code = "app/not-signed-in";
+        throw err;
+      }
+      const cred = firebase.auth.EmailAuthProvider.credential(
+        user.email,
+        currentPassword || "",
+      );
+      await user.reauthenticateWithCredential(cred);
+      await user.updatePassword(newPassword);
+      return true;
+    }
+
+    const users = readJSON(LOCAL_USERS_KEY, {});
+    const email = localStorage.getItem(LOCAL_SESSION_KEY);
+    const rec = users[email];
+    if (!rec) {
+      const err = new Error("User not found");
+      err.code = "auth/user-not-found";
+      throw err;
+    }
+    const hash = await hashPassword(currentPassword || "", rec.salt);
+    if (hash !== rec.hash) {
+      const err = new Error("Wrong password");
+      err.code = "auth/wrong-password";
+      throw err;
+    }
+    const salt = randomSalt();
+    rec.salt = salt;
+    rec.hash = await hashPassword(newPassword, salt);
+    writeJSON(LOCAL_USERS_KEY, users);
+    return true;
+  }
+
   return {
     init,
     onAuthChange,
@@ -463,5 +587,7 @@ const Backend = (function () {
     getAllResults,
     getPreferences,
     savePreferences,
+    updateName,
+    updatePassword,
   };
 })();

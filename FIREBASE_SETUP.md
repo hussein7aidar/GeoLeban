@@ -88,7 +88,12 @@ service cloud.firestore {
                     && request.resource.data.input in ['click', 'type']
                     && request.resource.data.points is int
                     && request.resource.data.points >= 0;
-      allow update, delete: if false;
+      // A player may rename only their own past results (account name change).
+      allow update: if request.auth != null
+                    && request.auth.uid == resource.data.uid
+                    && request.auth.uid == request.resource.data.uid
+                    && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name']);
+      allow delete: if false;
     }
   }
 }
