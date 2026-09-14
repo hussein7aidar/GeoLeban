@@ -84,7 +84,7 @@ service cloud.firestore {
       allow read: if true;
       allow create: if request.auth != null
                     && request.resource.data.uid == request.auth.uid
-                    && request.resource.data.mode in ['gov', 'caza']
+                    && request.resource.data.mode in ['gov', 'caza', 'city']
                     && request.resource.data.input in ['click', 'type']
                     && request.resource.data.points is int
                     && request.resource.data.points >= 0;
@@ -135,12 +135,18 @@ Then open <http://localhost:8000>.
 | Collection | Document | Fields |
 | --- | --- | --- |
 | `profiles` | `{uid}` | `name`, `email`, `createdAt` |
-| `results` | auto id | `uid`, `name`, `mode`, `input`, `total`, `solved`, `accuracy`, `elapsedMs`, `limitMs`, `completed`, `points`, `createdAt` |
+| `results` | auto id | `uid`, `name`, `mode`, `input`, `total`, `solved`, `accuracy`, `elapsedMs`, `limitMs`, `completed`, `points`, `custom`, `createdAt` |
 
-- `mode`: `"gov"` (governorates) or `"caza"` (districts)
+- `mode`: `"gov"` (governorates), `"caza"` (districts) or `"city"` (cities & villages)
 - `input`: `"click"` or `"type"`
 - `completed`: whether the round finished before a timer expired
+- `custom`: `true` for modified-count / hand-picked rounds (shown only in the Custom tab)
 - `points`: 100/60/30 per question depending on the attempt it was solved on
+
+> **Important:** the security rule above must allow `mode == "city"`, otherwise
+> every custom city round is rejected by Firestore. The app now also keeps a
+> local copy of your own results, so they still appear in your Custom board even
+> if the cloud write fails — but republish the rules to persist them online.
 
 Passwords are handled entirely by Firebase Authentication and are **never**
 stored in Firestore.

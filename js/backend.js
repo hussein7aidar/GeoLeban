@@ -21,6 +21,7 @@ const Backend = (function () {
   const LOCAL_USERS_KEY = "geoleban.users";
   const LOCAL_SESSION_KEY = "geoleban.session";
   const LOCAL_RESULTS_KEY = "geoleban.results";
+  const LOCAL_PREFS_KEY = "geoleban.prefs";
   const FIRESTORE_RESULTS = "results";
   const FIRESTORE_PROFILES = "profiles";
 
@@ -28,7 +29,7 @@ const Backend = (function () {
   let started = false;
   let fbAuth = null;
   let fbDb = null;
-  let currentUser = null; // { uid, name, email }
+  let currentUser = null; // { uid, name, email, prefs }
   const listeners = new Set();
   let resolveReady;
   const readyPromise = new Promise((res) => {
@@ -60,6 +61,43 @@ const Backend = (function () {
       Math.random().toString(36).slice(2, 10) +
       Date.now().toString(36)
     );
+  }
+
+  function localResults() {
+    const all = readJSON(LOCAL_RESULTS_KEY, []);
+    return Array.isArray(all) ? all : [];
+  }
+
+  // Stores a result locally, keyed by id, so the same record is never added
+  // twice (used as a mirror of cloud saves and as a fallback when the cloud
+  // write is rejected).
+  function saveLocalResult(record) {
+    const all = localResults();
+    const withId = Object.assign({}, record, { id: record.id || makeId() });
+    if (!all.some((r) => r.id === withId.id)) {
+      all.push(withId);
+      writeJSON(LOCAL_RESULTS_KEY, all);
+    }
+    return withId;
+  }
+
+  function mergeResults(primary, extra) {
+    const byId = new Map();
+    (primary || []).concat(extra || []).forEach((r) => {
+      if (!r) return;
+      const key = r.id ? r.id : JSON.stringify(r);
+      if (!byId.has(key)) byId.set(key, r);
+    });
+    return Array.from(byId.values());
+  }
+
+  function readLocalPrefs() {
+    const prefs = readJSON(LOCAL_PREFS_KEY, {});
+    return prefs && typeof prefs === "object" ? prefs : {};
+  }
+
+  function writeLocalPrefs(prefs) {
+    writeJSON(LOCAL_PREFS_KEY, prefs);
   }
 
   function fallbackHash(str) {
@@ -135,18 +173,22 @@ const Backend = (function () {
   async function resolveProfile(fbUser) {
     let name = fbUser.displayName;
     let email = fbUser.email || "";
+    const prefs = {};
     try {
       const doc = await fbDb.collection(FIRESTORE_PROFILES).doc(fbUser.uid).get();
       if (doc.exists) {
         const data = doc.data();
         if (data.name) name = data.name;
         if (data.email) email = data.email;
+        if (data.theme) prefs.theme = data.theme;
+        if (data.language) prefs.language = data.language;
+        if (typeof data.labels === "boolean") prefs.labels = data.labels;
       }
     } catch (e) {
       console.warn("[GeoLeban] Could not read profile.", e);
     }
     if (!name) name = email ? email.split("@")[0] : "Player";
-    return { uid: fbUser.uid, name, email };
+    return { uid: fbUser.uid, name, email, prefs };
   }
 
   function initFirebase() {
@@ -315,34 +357,43 @@ const Backend = (function () {
     });
 
     if (mode === "firebase" && user) {
-      const ref = await fbDb.collection(FIRESTORE_RESULTS).add(record);
-      return Object.assign(record, { id: ref.id });
+      try {
+        const ref = await fbDb.collection(FIRESTORE_RESULTS).add(record);
+        const saved = Object.assign({}, record, { id: ref.id });
+        // Keep a local mirror so the player always sees their own history even
+        // if the cloud copy is later unreachable.
+        saveLocalResult(saved);
+        return saved;
+      } catch (e) {
+        // E.g. Firestore rules reject the write. Keep the result locally so it
+        // still appears in the player's Custom board instead of vanishing.
+        console.warn("[GeoLeban] Cloud save failed; keeping a local copy.", e);
+        return saveLocalResult(record);
+      }
     }
 
-    const all = readJSON(LOCAL_RESULTS_KEY, []);
-    const withId = Object.assign(record, { id: makeId() });
-    all.push(withId);
-    writeJSON(LOCAL_RESULTS_KEY, all);
-    return withId;
+    return saveLocalResult(record);
   }
 
   async function getMyResults() {
     await init();
     if (mode === "firebase" && currentUser) {
+      let remote = [];
       try {
         const snap = await fbDb
           .collection(FIRESTORE_RESULTS)
           .where("uid", "==", currentUser.uid)
           .get();
-        const arr = snap.docs.map((d) => Object.assign({ id: d.id }, d.data()));
-        arr.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-        return arr;
+        remote = snap.docs.map((d) => Object.assign({ id: d.id }, d.data()));
       } catch (e) {
-        console.warn("[GeoLeban] Could not load your results.", e);
-        return [];
+        console.warn("[GeoLeban] Could not load your cloud results.", e);
       }
+      const local = localResults().filter((r) => r.uid === currentUser.uid);
+      return mergeResults(remote, local).sort(
+        (a, b) => (b.createdAt || 0) - (a.createdAt || 0),
+      );
     }
-    const all = readJSON(LOCAL_RESULTS_KEY, []);
+    const all = localResults();
     return all
       .filter((r) => !currentUser || r.uid === currentUser.uid)
       .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
@@ -351,27 +402,52 @@ const Backend = (function () {
   async function getAllResults() {
     await init();
     if (mode === "firebase") {
+      let remote = [];
       try {
         const snap = await fbDb
           .collection(FIRESTORE_RESULTS)
           .orderBy("points", "desc")
           .limit(300)
           .get();
-        return snap.docs.map((d) => Object.assign({ id: d.id }, d.data()));
+        remote = snap.docs.map((d) => Object.assign({ id: d.id }, d.data()));
       } catch (e) {
         // Missing index or offline: fall back to a plain fetch + client sort.
         try {
           const snap = await fbDb.collection(FIRESTORE_RESULTS).limit(300).get();
-          const arr = snap.docs.map((d) => Object.assign({ id: d.id }, d.data()));
-          arr.sort((a, b) => (b.points || 0) - (a.points || 0));
-          return arr;
+          remote = snap.docs.map((d) => Object.assign({ id: d.id }, d.data()));
+          remote.sort((a, b) => (b.points || 0) - (a.points || 0));
         } catch (e2) {
           console.warn("[GeoLeban] Could not load the leaderboard.", e2);
-          return [];
         }
       }
+      return mergeResults(remote, localResults());
     }
-    return readJSON(LOCAL_RESULTS_KEY, []);
+    return localResults();
+  }
+
+  function getPreferences() {
+    return readLocalPrefs();
+  }
+
+  async function savePreferences(prefs) {
+    const patch = prefs && typeof prefs === "object" ? prefs : {};
+    const merged = Object.assign(readLocalPrefs(), patch);
+    writeLocalPrefs(merged);
+
+    // Also persist to the user's profile so preferences follow the account.
+    try {
+      await init();
+      if (mode === "firebase" && currentUser) {
+        await fbDb
+          .collection(FIRESTORE_PROFILES)
+          .doc(currentUser.uid)
+          .set(patch, { merge: true });
+        currentUser.prefs = Object.assign(currentUser.prefs || {}, patch);
+      }
+    } catch (e) {
+      console.warn("[GeoLeban] Could not save preferences.", e);
+    }
+    return merged;
   }
 
   return {
@@ -385,5 +461,7 @@ const Backend = (function () {
     saveResult,
     getMyResults,
     getAllResults,
+    getPreferences,
+    savePreferences,
   };
 })();

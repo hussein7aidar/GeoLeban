@@ -41,7 +41,9 @@
   }
 
   function modeLabel(mode) {
-    return mode === "gov" ? t("govOption") : t("cazaOption");
+    if (mode === "caza") return t("cazaOption");
+    if (mode === "city") return t("cityOption");
+    return t("govOption");
   }
   function inputLabel(input) {
     return input === "click" ? t("clickShort") : t("typeShort");
@@ -56,6 +58,21 @@
       a[j] = tmp;
     }
     return a;
+  }
+
+  // Guarantees a place is only asked once per round. Two distinct features can
+  // share the same displayed (localized) name, which otherwise looks like the
+  // same question being repeated.
+  function dedupeQuestions(list) {
+    const seen = new Set();
+    const out = [];
+    (list || []).forEach((name) => {
+      const key = displayName(name);
+      if (!key || seen.has(key)) return;
+      seen.add(key);
+      out.push(name);
+    });
+    return out;
   }
 
   function normalizeAnswer(str) {
@@ -80,6 +97,80 @@
     "leaderboard-overlay",
   ];
 
+  // Curated, recognizable places used by the "Famous Cities/Villages" sub-mode.
+  // Names must match the shapeName values in cities.js exactly.
+  const FAMOUS_CITIES = [
+    "Beirut Central District",
+    "Trablous Et-Tell",
+    "Trablous et Tabbaneh",
+    "Saida El-Qadimeh",
+    "Zahleh El-Midane",
+    "Nabatieh Et-Tahta",
+    "Jounieh Sarba",
+    "Zouk Mkayel",
+    "Baalbek",
+    "Batroun",
+    "Zgharta",
+    "Jezzine",
+    "Hermel",
+    "Sour",
+    "Bcharreh",
+    "Aaley",
+    "Antelias",
+    "Dbayeh",
+    "Bourj Hammoud",
+    "Baabda",
+    "Chiyah",
+    "Ghazir",
+    "Faraya",
+    "Bikfaya",
+    "Broummana El-Matn",
+    "Damour",
+    "Jiyeh",
+    "Aamchit",
+    "Joun",
+    "Ehden",
+    "Hasroun",
+    "Douma",
+    "Tannourine Et-Tahta",
+    "Aanjar (Haouch Moussa)",
+    "Machghara",
+    "Naameh",
+    "Barja",
+    "Bsous",
+    "Laqlouq",
+    "Aaqoura",
+    "Amioun",
+    "Qana",
+    "Arnoun",
+    "Chtaura",
+    "Bchamoun",
+    "Bteghrine",
+    "Nahr Ibrahim",
+    "Jaj",
+    "Ehmej",
+    "Rachkida",
+    "Hamat",
+    "Dimane",
+    "Tourza",
+    "Hadchit",
+    "Bqaa Kafra",
+    "Miziara",
+    "Kfarsghab",
+    "Sarafand",
+    "Aadloun",
+    "Saghbine",
+    "Qabb Elias",
+    "Saadnayel",
+    "Niha El-Chouf",
+    "Bqaatouta",
+    "Hardine",
+    "Kousba",
+    "Heri",
+    "Ijdabra",
+    "Afqa Jbayl",
+  ];
+
   /* -------------------------------- State --------------------------------- */
 
   const state = {
@@ -92,25 +183,42 @@
     triesLeft: 3,
     maxTries: 3,
     solved: 0,
+    wrongCount: 0,
     points: 0,
     startTime: 0,
     elapsedMs: 0,
+    pausedMs: 0,
     timerId: null,
     locked: false,
+    inputLockUntil: 0,
     current: null,
     user: null,
     lastResult: null,
+    custom: false,
   };
 
   let authMode = "login";
   let setupMode = "gov";
   let setupInput = "click";
+  let setupArea = "district"; // city mode only: "district" | "pick"
+  let setupDistrict = "";
+  let setupCount = 0;
+  let setupCountTouched = false;
   let setupMinutes = 0;
   let setupUseCustom = false;
 
-  let lbTab = "global";
-  let lbMode = "all";
-  let lbInput = "all";
+  // Pick-on-map selection phase
+  let selecting = false;
+  let selectedCities = {};
+  let paintDown = false;
+  let pendingMinutes = 0;
+
+  let lbTab = "my";
+  let lbCombo = "gov|click";
+  let globalCache = null;
+  let globalPromise = null;
+  let myCache = null;
+  let myPromise = null;
 
   /* ------------------------------ Overlay UI ------------------------------ */
 
@@ -119,7 +227,9 @@
       const el = $(o);
       if (el) el.classList.toggle("active", o === id);
     });
-    setFab(false);
+    // Dismiss the boot screen once we know which overlay to show.
+    const boot = $("boot-overlay");
+    if (boot) boot.classList.remove("active");
     document.body.classList.add("overlay-open");
   }
 
@@ -129,13 +239,83 @@
       if (el) el.classList.remove("active");
     });
     document.body.classList.remove("overlay-open");
-    setFab(!!state.user);
   }
 
-  function setFab(on) {
-    const f = $("game-fab");
-    if (f) f.classList.toggle("visible", !!on);
+  /* ------------------------- Confirmation modal --------------------------- */
+
+  let confirmResolve = null;
+  let confirmPauseStart = 0;
+
+  function anchorFromEvent(e) {
+    if (!e || typeof e.clientX !== "number" || typeof e.clientY !== "number") {
+      return null;
+    }
+    return { x: e.clientX, y: e.clientY };
   }
+
+  // Places the confirmation panel next to the control the user pressed instead
+  // of dead-centre, then clamps it inside the viewport.
+  function positionConfirm(anchor) {
+    const overlay = $("confirm-overlay");
+    const panel = overlay && overlay.querySelector(".confirm-panel");
+    if (!panel) return;
+    if (!anchor) {
+      panel.classList.remove("anchored");
+      panel.style.left = "";
+      panel.style.top = "";
+      return;
+    }
+    panel.classList.add("anchored");
+    const pad = 12;
+    const rect = panel.getBoundingClientRect();
+    let left = anchor.x + 14;
+    let top = anchor.y + 14;
+    if (left + rect.width > window.innerWidth - pad) {
+      left = Math.max(pad, anchor.x - rect.width - 14);
+    }
+    if (top + rect.height > window.innerHeight - pad) {
+      top = Math.max(pad, anchor.y - rect.height - 14);
+    }
+    panel.style.left = left + "px";
+    panel.style.top = top + "px";
+  }
+
+  function showConfirm(opts) {
+    opts = opts || {};
+    return new Promise((resolve) => {
+      confirmResolve = resolve;
+      $("confirm-title").textContent = opts.title || "";
+      $("confirm-message").textContent = opts.message || "";
+      $("confirm-ok").textContent = opts.confirmLabel || t("confirmBtn");
+      const cancel = $("confirm-cancel");
+      if (opts.cancel === false) {
+        cancel.style.display = "none";
+      } else {
+        cancel.style.display = "";
+        cancel.textContent = opts.cancelLabel || t("cancel");
+      }
+      $("confirm-overlay").classList.add("active");
+      positionConfirm(opts.anchor);
+      // Freeze the round clock while a confirmation is open.
+      if (state.active) confirmPauseStart = performance.now();
+    });
+  }
+
+  function closeConfirm(result) {
+    $("confirm-overlay").classList.remove("active");
+    if (confirmPauseStart) {
+      state.pausedMs += performance.now() - confirmPauseStart;
+      confirmPauseStart = 0;
+    }
+    const resolve = confirmResolve;
+    confirmResolve = null;
+    if (resolve) resolve(result);
+  }
+
+  window.showConfirm = showConfirm;
+  window.showAlert = function (title, message) {
+    return showConfirm({ title: title, message: message, cancel: false });
+  };
 
   /* -------------------------------- i18n ---------------------------------- */
 
@@ -146,9 +326,13 @@
     qsa("[data-i18n-ph]").forEach((el) => {
       el.setAttribute("placeholder", t(el.getAttribute("data-i18n-ph")));
     });
+    qsa("[data-i18n-title]").forEach((el) => {
+      el.setAttribute("title", t(el.getAttribute("data-i18n-title")));
+    });
     syncAuthModeUI();
     syncSetupUi();
     updateModeNotes();
+    populateLbFilter();
 
     if ($("leaderboard-overlay").classList.contains("active")) renderLeaderboard();
     if ($("stats-overlay").classList.contains("active")) renderStats();
@@ -169,6 +353,17 @@
         el.style.display = hidden ? "none" : "";
       }
     });
+  }
+
+  /* --------------------------- User preferences --------------------------- */
+
+  function applyPreferences(prefs) {
+    if (!prefs) return;
+    if (prefs.theme) setTheme(prefs.theme);
+    if (prefs.language) setLanguage(prefs.language);
+    // Map labels are always hidden: the base style's Arabic labels do not
+    // render reliably, so the "Show map labels" toggle was removed from the
+    // main menu.
   }
 
   /* -------------------------------- Auth ---------------------------------- */
@@ -247,6 +442,9 @@
     if (user) {
       $("menu-user-name").textContent = user.name;
       $("menu-user-email").textContent = user.email || "";
+      if (user.prefs && Object.keys(user.prefs).length) {
+        applyPreferences(user.prefs);
+      }
       if (wasActive) return; // keep playing
       // Go to the menu after a fresh login / signup, but don't yank the user
       // away from another panel (stats, leaderboard, setup) if they are
@@ -274,6 +472,7 @@
   }
 
   async function handleLogout() {
+    invalidateCaches();
     try {
       await Backend.signOut();
     } catch (e) {
@@ -283,12 +482,85 @@
 
   /* ------------------------------- Setup ---------------------------------- */
 
+  function cityDistricts() {
+    const counts = {};
+    if (typeof CITIES_DATA !== "undefined") {
+      CITIES_DATA.features.forEach((f) => {
+        const d = f.properties.district;
+        if (d) counts[d] = (counts[d] || 0) + 1;
+      });
+    }
+    return Object.keys(counts)
+      .map((name) => ({ name: name, count: counts[name] }))
+      .sort((a, b) =>
+        displayName(a.name).localeCompare(displayName(b.name), currentLang),
+      );
+  }
+
+  function districtLabel(name) {
+    let key = name;
+    if (typeof resolveFeatureKey === "function") {
+      const resolved = resolveFeatureKey("caza", name);
+      if (resolved !== "all") key = resolved;
+    }
+    return getTranslatedName(key, currentLang);
+  }
+
+  function districtCount(name) {
+    if (typeof CITIES_DATA === "undefined" || !name) return 0;
+    let n = 0;
+    CITIES_DATA.features.forEach((f) => {
+      if (f.properties.district === name) n++;
+    });
+    return n;
+  }
+
+  function populateDistrictSelect() {
+    const select = $("setup-district");
+    if (!select) return;
+    const list = cityDistricts();
+    select.innerHTML = "";
+    list.forEach((d) => {
+      const opt = document.createElement("option");
+      opt.value = d.name;
+      opt.textContent = districtLabel(d.name) + " (" + d.count + ")";
+      select.appendChild(opt);
+    });
+    if (!setupDistrict || !list.some((d) => d.name === setupDistrict)) {
+      setupDistrict = list.length ? list[0].name : "";
+    }
+    select.value = setupDistrict;
+  }
+
+  function setCountToDistrictDefault() {
+    const input = $("setup-count");
+    if (!input) return;
+    const total = districtCount(setupDistrict);
+    input.value = String(total);
+    setupCount = total;
+  }
+
+  function updateCustomNote() {
+    const note = $("setup-custom-note");
+    if (!note) return;
+    const total = districtCount(setupDistrict);
+    const count = Number(($("setup-count") || {}).value) || total;
+    const isCustom =
+      setupMode === "city" &&
+      (setupArea === "pick" ||
+        (setupArea === "district" && total > 0 && count < total));
+    note.style.display = isCustom ? "" : "none";
+  }
+
   function syncSetupUi() {
     qsa("[data-setup-mode]").forEach((b) =>
       b.classList.toggle("active", b.getAttribute("data-setup-mode") === setupMode),
     );
     qsa("[data-setup-input]").forEach((b) =>
       b.classList.toggle("active", b.getAttribute("data-setup-input") === setupInput),
+    );
+    qsa("[data-setup-area]").forEach((b) =>
+      b.classList.toggle("active", b.getAttribute("data-setup-area") === setupArea),
     );
     qsa("[data-setup-timer]").forEach((b) =>
       b.classList.toggle(
@@ -298,18 +570,55 @@
     );
     const custom = $("setup-custom-min");
     if (custom) custom.classList.toggle("active", setupUseCustom);
+
+    const isCity = setupMode === "city";
+    const areaGroup = $("setup-area-group");
+    if (areaGroup) areaGroup.style.display = isCity ? "" : "none";
+    const districtGroup = $("setup-district-group");
+    if (districtGroup) {
+      districtGroup.style.display =
+        isCity && setupArea === "district" ? "" : "none";
+    }
+
+    if (isCity) {
+      populateDistrictSelect();
+      if (setupArea === "district") {
+        const total = districtCount(setupDistrict);
+        const input = $("setup-count");
+        if (input) {
+          input.max = String(total);
+          const v = Number(input.value);
+          if (!setupCountTouched || !v || v < 1 || v > total) {
+            setCountToDistrictDefault();
+          } else {
+            setupCount = v;
+          }
+        }
+        const of = $("setup-count-of");
+        if (of) of.textContent = t("ofTotal") + " " + total;
+      }
+    }
+    updateCustomNote();
   }
 
   function bindSetup() {
     qsa("[data-setup-mode]").forEach((b) =>
       b.addEventListener("click", () => {
         setupMode = b.getAttribute("data-setup-mode");
+        setupCountTouched = false;
         syncSetupUi();
       }),
     );
     qsa("[data-setup-input]").forEach((b) =>
       b.addEventListener("click", () => {
         setupInput = b.getAttribute("data-setup-input");
+        syncSetupUi();
+      }),
+    );
+    qsa("[data-setup-area]").forEach((b) =>
+      b.addEventListener("click", () => {
+        setupArea = b.getAttribute("data-setup-area");
+        setupCountTouched = false;
         syncSetupUi();
       }),
     );
@@ -330,6 +639,27 @@
         syncSetupUi();
       });
     }
+    const district = $("setup-district");
+    if (district) {
+      district.addEventListener("change", () => {
+        setupDistrict = district.value;
+        setupCountTouched = false;
+        setCountToDistrictDefault();
+        syncSetupUi();
+      });
+    }
+    const count = $("setup-count");
+    if (count) {
+      count.addEventListener("input", () => {
+        const total = districtCount(setupDistrict);
+        let v = Math.floor(Number(count.value));
+        if (!v || v < 1) v = 1;
+        if (total && v > total) v = total;
+        setupCount = v;
+        setupCountTouched = true;
+        updateCustomNote();
+      });
+    }
   }
 
   function getSetupMinutes() {
@@ -342,45 +672,213 @@
 
   /* ------------------------------ Gameplay -------------------------------- */
 
+  function isCustomCity() {
+    if (setupMode !== "city") return false;
+    if (setupArea === "pick") return true;
+    if (setupArea !== "district") return false;
+    const total = districtCount(setupDistrict);
+    const count = Number(($("setup-count") || {}).value) || total;
+    return total > 0 && count < total;
+  }
+
+  function buildQuestions() {
+    if (setupMode !== "city") {
+      return shuffle(getFeatureNamesForMode(setupMode));
+    }
+    if (setupArea === "famous") {
+      return shuffle(FAMOUS_CITIES);
+    }
+    if (setupArea === "pick") {
+      return shuffle(Object.keys(selectedCities));
+    }
+    const total = districtCount(setupDistrict);
+    let count = Number(($("setup-count") || {}).value) || total;
+    if (count < 1) count = 1;
+    if (count > total) count = total;
+    const pool = [];
+    CITIES_DATA.features.forEach((f) => {
+      if (f.properties.district === setupDistrict) {
+        pool.push(f.properties.shapeName);
+      }
+    });
+    return shuffle(pool).slice(0, count);
+  }
+
   function startGame() {
+    const minutes = getSetupMinutes();
+    if (setupMode === "city" && setupArea === "pick") {
+      enterSelectionPhase(minutes);
+      return;
+    }
+    launchGame(buildQuestions(), isCustomCity(), minutes);
+  }
+
+  function launchGame(questions, custom, minutes) {
     state.mode = setupMode;
     state.input = setupInput;
-    const minutes = getSetupMinutes();
+    // Both modes allow up to 3 attempts; each wrong guess costs accuracy.
+    state.maxTries = 3;
     state.limitMs = minutes > 0 ? minutes * 60 * 1000 : 0;
-    state.questions = shuffle(getFeatureNamesForMode(state.mode));
+    state.questions = dedupeQuestions(questions);
+    state.custom = custom;
     state.index = 0;
     state.solved = 0;
+    state.wrongCount = 0;
     state.points = 0;
     state.locked = false;
     state.active = true;
     state.current = null;
 
-    if (typeof setMode === "function") setMode(state.mode);
+    if (typeof setMode === "function") setMode(state.mode, { skipCamera: true });
     setGameActive(true);
+    // Start the round with a clean map: no leftover green/wrong marks.
+    if (typeof gameClearMarks === "function") gameClearMarks();
     hideOverlays();
-    setFab(false);
     $("game-hud").classList.add("active");
     $("game-feedback").textContent = "";
     $("game-answer-input").value = "";
 
     state.startTime = performance.now();
     state.elapsedMs = 0;
+    state.pausedMs = 0;
     startTimer();
     nextQuestion();
   }
 
-  function quitGame(silent) {
+  /* -------------------- Pick-on-map selection phase ----------------------- */
+
+  function enterSelectionPhase(minutes) {
+    selecting = true;
+    selectedCities = {};
+    paintDown = false;
+    pendingMinutes = minutes;
+    window.isSelectingOnMap = function () {
+      return selecting;
+    };
+
+    if (typeof setMode === "function") setMode("city");
+    setGameActive(true);
+    hideOverlays();
+    setMapPainting(true);
+    if (typeof selectItem === "function") selectItem("all", { skipCamera: true });
+    $("select-error").textContent = "";
+    $("select-count").textContent = "0";
+    $("select-bar").classList.add("active");
+    updateSelectionMarks();
+  }
+
+  function updateSelectionMarks() {
+    gameClearMarks();
+    Object.keys(selectedCities).forEach((name) => gameMark(name, "correct"));
+    const count = $("select-count");
+    if (count) count.textContent = String(Object.keys(selectedCities).length);
+  }
+
+  function paintAtPoint(point) {
+    const layer = sourceIdForMode("city") + "-fill";
+    if (!map.getLayer(layer)) return;
+    const feats = map.queryRenderedFeatures(point, { layers: [layer] });
+    if (!feats || !feats.length) return;
+    let added = false;
+    feats.forEach((f) => {
+      const name = extractFeatureName(f.properties);
+      if (name && !selectedCities[name]) {
+        selectedCities[name] = true;
+        added = true;
+      }
+    });
+    if (added) updateSelectionMarks();
+  }
+
+  function finishSelection() {
+    if (!selecting) return;
+    const names = Object.keys(selectedCities);
+    if (!names.length) {
+      $("select-error").textContent = t("selectAtLeastOne");
+      return;
+    }
+    const minutes = pendingMinutes;
+    exitSelectionPhase();
+    launchGame(shuffle(names), true, minutes);
+  }
+
+  function cancelSelection() {
+    exitSelectionPhase();
+    showOverlay("menu-overlay");
+  }
+
+  function clearSelection() {
+    selectedCities = {};
+    updateSelectionMarks();
+    $("select-error").textContent = "";
+  }
+
+  function exitSelectionPhase() {
+    selecting = false;
+    paintDown = false;
+    setMapPainting(false);
+    $("select-bar").classList.remove("active");
+    setGameActive(false);
+    $("game-hud").classList.remove("active");
+    window.isSelectingOnMap = null;
+  }
+
+  map.on("mousedown", (e) => {
+    if (!selecting) return;
+    if (e.originalEvent && e.originalEvent.button !== 0) return;
+    paintDown = true;
+    paintAtPoint(e.point);
+  });
+  map.on("mousemove", (e) => {
+    if (selecting && paintDown) paintAtPoint(e.point);
+  });
+  map.on("mouseup", () => {
+    paintDown = false;
+  });
+  map.on("touchstart", (e) => {
+    if (!selecting) return;
+    paintDown = true;
+    paintAtPoint(e.point);
+  });
+  map.on("touchmove", (e) => {
+    if (selecting && paintDown) paintAtPoint(e.point);
+  });
+  map.on("touchend", () => {
+    paintDown = false;
+  });
+
+  async function quitGame(silent, anchor) {
     if (!state.active) {
       if (!silent) showOverlay("menu-overlay");
       return;
     }
-    if (!silent && !window.confirm(t("quitConfirm"))) return;
+    if (!silent) {
+      const ok = await showConfirm({
+        title: t("quit"),
+        message: t("quitConfirm"),
+        anchor: anchor,
+      });
+      if (!ok) return;
+    }
     state.active = false;
     stopTimer();
     setGameActive(false);
     $("game-hud").classList.remove("active");
     if (silent) showOverlay("auth-overlay");
     else showOverlay("menu-overlay");
+  }
+
+  async function restartRound(anchor) {
+    if (!state.active) return;
+    const ok = await showConfirm({
+      title: t("restart"),
+      message: t("restartConfirm"),
+      anchor: anchor,
+    });
+    if (!ok || !state.active) return;
+    const minutes = state.limitMs ? state.limitMs / 60000 : 0;
+    // Pick/shuffle the places again and start with a clean map.
+    launchGame(buildQuestions(), isCustomCity(), minutes);
   }
 
   function nextQuestion() {
@@ -395,15 +893,17 @@
     setFeedback("", "");
     $("game-answer-input").value = "";
     $("game-answer-input").disabled = false;
-    gameClearMarks();
+    // Keep already-solved places green for the rest of the round.
+    gameClearTransientMarks();
 
     if (state.input === "click") {
-      if (typeof selectItem === "function") selectItem("all");
+      // Swallow a stray second click (e.g. a double-click) without holding up
+      // the next question. This does not consume any time on the clock.
+      state.inputLockUntil = performance.now() + 300;
       $("game-input-row").style.display = "none";
       $("game-prompt-target").style.display = "";
     } else {
       gameMark(state.current, "target");
-      fitToFeature(state.current);
       $("game-input-row").style.display = "";
       $("game-prompt-target").style.display = "none";
       setTimeout(() => $("game-answer-input").focus(), 250);
@@ -425,15 +925,10 @@
     }
   }
 
-  function fitToFeature(name) {
-    const feat = featuresByName[state.mode][name];
-    if (!feat) return;
-    const bounds = getBounds(feat.geometry.coordinates);
-    map.fitBounds(bounds, {
-      padding: getResponsivePadding(),
-      duration: 600,
-      essential: true,
-    });
+  function currentAccuracy() {
+    const attempts = state.solved + state.wrongCount;
+    if (!attempts) return 100;
+    return Math.round((state.solved / attempts) * 1000) / 10;
   }
 
   function updateGameHud() {
@@ -442,6 +937,8 @@
       t("question") + " " + shown + " / " + state.questions.length;
     $("game-tries").textContent = t("triesLeft") + ": " + state.triesLeft;
     $("game-score").textContent = t("points") + ": " + state.points;
+    $("game-accuracy").textContent =
+      t("accuracy") + ": " + currentAccuracy() + "%";
     $("game-timer").textContent = timerText();
   }
 
@@ -456,7 +953,7 @@
   function startTimer() {
     stopTimer();
     state.timerId = setInterval(() => {
-      state.elapsedMs = performance.now() - state.startTime;
+      state.elapsedMs = performance.now() - state.startTime - state.pausedMs;
       if (state.limitMs && state.elapsedMs >= state.limitMs) {
         state.elapsedMs = state.limitMs;
         updateGameHud();
@@ -480,6 +977,20 @@
     el.className = "game-feedback" + (kind ? " " + kind : "");
   }
 
+  // Short, self-dismissing pop-up so the player notices the result even though
+  // the game moves straight on to the next question.
+  let flashTimer = null;
+  function flashGame(text, kind) {
+    const el = $("game-flash");
+    if (!el) return;
+    el.textContent = text || "";
+    el.className = "game-flash" + (kind ? " " + kind : "");
+    void el.offsetWidth; // restart the CSS animation
+    el.classList.add("show");
+    if (flashTimer) clearTimeout(flashTimer);
+    flashTimer = setTimeout(() => el.classList.remove("show"), 950);
+  }
+
   function pointsForTry(tryNo) {
     return [100, 60, 30][tryNo - 1] || 0;
   }
@@ -491,12 +1002,25 @@
       const n = normalizeAnswer(s);
       if (n) set.add(n);
     };
-    push(target);
+    // Accept the plain name when a duplicate was disambiguated with a
+    // parenthetical qualifier, e.g. "Kafr (Jbeil)" -> "Kafr" and
+    // "مغيره (جبيل)" -> "مغيره", so typing just the base name still counts.
+    const pushVariants = (s) => {
+      push(s);
+      const base = String(s)
+        .replace(/\s*#[0-9]+$/, "")
+        .replace(/\s*\([^)]*\)\s*$/, "");
+      if (base && base !== s) push(base);
+    };
+    pushVariants(target);
     const targetVals = langs.map((l) => getTranslatedName(target, l));
-    targetVals.forEach(push);
+    targetVals.forEach(pushVariants);
     Object.keys(TRANSLATIONS.names).forEach((key) => {
       const vals = langs.map((l) => getTranslatedName(key, l));
-      if (vals.some((v) => targetVals.indexOf(v) !== -1)) push(key);
+      if (vals.some((v) => targetVals.indexOf(v) !== -1)) {
+        push(key);
+        vals.forEach(pushVariants);
+      }
     });
     return set;
   }
@@ -514,17 +1038,18 @@
     state.points += pointsForTry(tryNo);
     state.solved += 1;
     gameMark(state.current, "correct");
-    setFeedback("correct", t("correct"));
+    flashGame("\u2713 " + displayName(state.current), "correct");
     updateGameHud();
-    setTimeout(() => {
-      state.index += 1;
-      nextQuestion();
-    }, 700);
+    // Move on immediately: the green mark persists for the round, so there is
+    // no reason to hold the next question back and eat into the clock.
+    state.index += 1;
+    nextQuestion();
   }
 
   function handleWrong(clickedName) {
     if (state.locked) return;
     state.triesLeft -= 1;
+    state.wrongCount += 1;
     if (clickedName) gameMark(clickedName, "wrong");
     updateGameHud();
 
@@ -532,14 +1057,14 @@
       state.locked = true;
       gameMark(state.current, "correct");
       $("game-answer-input").disabled = true;
-      setFeedback(
-        "reveal",
+      flashGame(
         t("revealAnswer") + ": " + displayName(state.current),
+        "reveal",
       );
-      setTimeout(() => {
-        state.index += 1;
-        nextQuestion();
-      }, 1700);
+      // Mark the place and move straight on; the flash tells the player the
+      // answer without pausing the clock.
+      state.index += 1;
+      nextQuestion();
     } else {
       setFeedback("wrong", t("wrong") + " — " + t("triesLeft") + ": " + state.triesLeft);
       if (state.input === "type") $("game-answer-input").select();
@@ -548,7 +1073,8 @@
 
   function handleGameMapClick(e) {
     if (!state.active || state.input !== "click" || state.locked) return;
-    const layer = state.mode === "gov" ? "lebanon-govs-fill" : "lebanon-cazas-fill";
+    if (performance.now() < state.inputLockUntil) return;
+    const layer = sourceIdForMode(state.mode) + "-fill";
     if (!map.getLayer(layer)) return;
     const feats = map.queryRenderedFeatures(e.point, { layers: [layer] });
     if (!feats || !feats.length) return;
@@ -571,14 +1097,14 @@
 
   function endGame(reason) {
     if (!state.active) return;
-    state.elapsedMs = performance.now() - state.startTime;
+    state.elapsedMs = performance.now() - state.startTime - state.pausedMs;
     stopTimer();
     state.active = false;
     setGameActive(false);
     $("game-hud").classList.remove("active");
 
     const total = state.questions.length;
-    const accuracy = total ? (state.solved / total) * 100 : 0;
+    const accuracy = currentAccuracy();
     const result = {
       mode: state.mode,
       input: state.input,
@@ -589,6 +1115,7 @@
       limitMs: state.limitMs,
       completed: reason === "complete",
       points: state.points,
+      custom: !!state.custom,
     };
     showResults(result, reason);
   }
@@ -607,9 +1134,12 @@
 
     let prevBest = null;
     try {
-      const mine = await Backend.getMyResults();
+      const mine = await loadMyResults();
       const rel = mine.filter(
-        (r) => r.mode === result.mode && r.input === result.input,
+        (r) =>
+          r.mode === result.mode &&
+          r.input === result.input &&
+          !!r.custom === !!result.custom,
       );
       if (rel.length) {
         prevBest = rel.reduce((a, b) => (b.points > a.points ? b : a));
@@ -621,6 +1151,7 @@
     try {
       await Backend.saveResult(result);
       $("results-save").textContent = "";
+      invalidateCaches();
     } catch (e) {
       console.warn("[GeoLeban] Could not save result.", e);
       $("results-save").textContent = t("genericError");
@@ -654,7 +1185,7 @@
     grid.innerHTML = '<p class="muted">…</p>';
     let mine = [];
     try {
-      mine = await Backend.getMyResults();
+      mine = await loadMyResults();
     } catch (e) {
       mine = [];
     }
@@ -663,6 +1194,8 @@
       ["gov", "type"],
       ["caza", "click"],
       ["caza", "type"],
+      ["city", "click"],
+      ["city", "type"],
     ];
     grid.innerHTML = combos
       .map((combo) => statsCard(combo[0], combo[1], mine))
@@ -670,7 +1203,10 @@
   }
 
   function statsCard(mode, input, mine) {
-    const rel = mine.filter((r) => r.mode === mode && r.input === input);
+    // Built-in best results exclude custom (modified-count / hand-picked) rounds.
+    const rel = mine.filter(
+      (r) => r.mode === mode && r.input === input && !r.custom,
+    );
     const head =
       "<h3>" + modeLabel(mode) + " · " + inputLabel(input) + "</h3>";
     if (!rel.length) {
@@ -698,63 +1234,152 @@
 
   /* ----------------------------- Leaderboard ------------------------------ */
 
-  function openLeaderboard(tab) {
-    lbTab = tab || "global";
-    showOverlay("leaderboard-overlay");
-    renderLeaderboard();
+  const LB_COMBOS = [
+    ["gov", "click"],
+    ["gov", "type"],
+    ["caza", "click"],
+    ["caza", "type"],
+    ["city", "click"],
+    ["city", "type"],
+  ];
+
+  function populateLbFilter() {
+    const select = $("lb-filter");
+    if (!select) return;
+    select.innerHTML = "";
+    LB_COMBOS.forEach((combo) => {
+      const opt = document.createElement("option");
+      opt.value = combo[0] + "|" + combo[1];
+      opt.textContent = modeLabel(combo[0]) + " · " + inputLabel(combo[1]);
+      select.appendChild(opt);
+    });
+    select.value = lbCombo;
   }
 
-  async function renderLeaderboard() {
+  function openLeaderboard(tab) {
+    lbTab = tab || "my";
+    showOverlay("leaderboard-overlay");
+    renderLeaderboard({ autoSelect: true });
+  }
+
+  function loadEveryoneResults() {
+    // Queried only the first time the "Everyone" tab is opened; cached after.
+    if (globalCache !== null) return Promise.resolve(globalCache);
+    if (!globalPromise) {
+      globalPromise = Backend.getAllResults()
+        .then((rows) => {
+          globalCache = rows || [];
+          globalPromise = null;
+          return globalCache;
+        })
+        .catch((e) => {
+          globalPromise = null;
+          throw e;
+        });
+    }
+    return globalPromise;
+  }
+
+  function invalidateEveryoneCache() {
+    globalCache = null;
+    globalPromise = null;
+  }
+
+  function loadMyResults() {
+    // Queried only once per session; invalidated when a new result is saved.
+    if (myCache !== null) return Promise.resolve(myCache);
+    if (!myPromise) {
+      myPromise = Backend.getMyResults()
+        .then((rows) => {
+          myCache = rows || [];
+          myPromise = null;
+          return myCache;
+        })
+        .catch((e) => {
+          myPromise = null;
+          throw e;
+        });
+    }
+    return myPromise;
+  }
+
+  function invalidateCaches() {
+    invalidateEveryoneCache();
+    myCache = null;
+    myPromise = null;
+  }
+
+  async function renderLeaderboard(opts) {
     const body = $("lb-body");
     if (!body) return;
     $("lb-tab-global").classList.toggle("active", lbTab === "global");
     $("lb-tab-my").classList.toggle("active", lbTab === "my");
-    body.innerHTML = '<tr><td colspan="6" class="empty">…</td></tr>';
+    $("lb-tab-custom").classList.toggle("active", lbTab === "custom");
+    body.innerHTML = '<tr><td colspan="5" class="empty">…</td></tr>';
 
     let rows = [];
     try {
-      rows = lbTab === "global" ? await Backend.getAllResults() : await Backend.getMyResults();
+      rows =
+        lbTab === "global"
+          ? await loadEveryoneResults()
+          : await loadMyResults();
     } catch (e) {
       rows = [];
     }
 
-    rows = rows.filter(
-      (r) =>
-        (lbMode === "all" || r.mode === lbMode) &&
-        (lbInput === "all" || r.input === lbInput),
-    );
+    const isCustom = lbTab === "custom";
+    // Custom rounds (modified count / hand-picked) are private and belong to
+    // the Custom tab only.
+    rows = rows.filter((r) => (isCustom ? !!r.custom : !r.custom));
 
-    if (lbTab === "global") {
-      rows.sort(
+    // On a tab switch, point the board filter at a board that actually has
+    // results (custom and standard rounds live on different boards). This is
+    // skipped when the user changes the filter themselves, so an empty board
+    // still shows "no results yet" instead of jumping elsewhere.
+    if (opts && opts.autoSelect && rows.length) {
+      const hasCurrent = rows.some((r) => r.mode + "|" + r.input === lbCombo);
+      if (!hasCurrent) {
+        lbCombo = rows[0].mode + "|" + rows[0].input;
+        const select = $("lb-filter");
+        if (select) select.value = lbCombo;
+      }
+    }
+
+    rows = rows
+      .filter((r) => r.mode + "|" + r.input === lbCombo)
+      .sort(
         (a, b) =>
           (b.points || 0) - (a.points || 0) ||
           (b.accuracy || 0) - (a.accuracy || 0) ||
           (a.elapsedMs || 0) - (b.elapsedMs || 0),
-      );
-    }
+      )
+      .slice(0, 50);
 
     if (!rows.length) {
       body.innerHTML =
-        '<tr><td colspan="6" class="empty">' + t("noResultsYet") + "</td></tr>";
+        '<tr><td colspan="5" class="empty">' + t("noResultsYet") + "</td></tr>";
       return;
     }
 
-    body.innerHTML = rows
-      .slice(0, 50)
-      .map((r, i) => leaderboardRow(r, i))
-      .join("");
+    body.innerHTML = rows.map((r, i) => leaderboardRow(r, i)).join("");
+  }
+
+  function rankCell(rank) {
+    if (rank === 1) return '<span class="rank-medal">🥇</span>';
+    if (rank === 2) return '<span class="rank-medal">🥈</span>';
+    if (rank === 3) return '<span class="rank-medal">🥉</span>';
+    return String(rank);
   }
 
   function leaderboardRow(r, i) {
     const isMe = state.user && r.uid && r.uid === state.user.uid;
     return (
       "<tr" + (isMe ? ' class="is-me"' : "") + ">" +
-      "<td>" + (i + 1) + "</td>" +
+      '<td class="rank-cell">' + rankCell(i + 1) + "</td>" +
       "<td>" +
       escapeHtml(r.name || "—") +
       (isMe ? ' <span class="you-badge">' + t("you") + "</span>" : "") +
       "</td>" +
-      "<td>" + modeLabel(r.mode) + " · " + inputLabel(r.input) + "</td>" +
       "<td>" + (r.accuracy != null ? r.accuracy + "%" : "—") + "</td>" +
       "<td>" + formatTime(r.elapsedMs) + "</td>" +
       "<td><strong>" + (r.points || 0) + "</strong></td>" +
@@ -774,15 +1399,38 @@
 
     $("menu-play").addEventListener("click", () => showOverlay("setup-overlay"));
     $("menu-stats").addEventListener("click", openStats);
-    $("menu-leaderboard").addEventListener("click", () => openLeaderboard("global"));
+    $("menu-leaderboard").addEventListener("click", () => openLeaderboard());
     $("menu-explore").addEventListener("click", hideOverlays);
     $("menu-logout").addEventListener("click", handleLogout);
-    $("game-fab").addEventListener("click", openMenu);
+    $("btn-main-menu").addEventListener("click", openMenu);
+
+    $("select-start").addEventListener("click", finishSelection);
+    $("select-clear").addEventListener("click", clearSelection);
+    $("select-cancel").addEventListener("click", cancelSelection);
+
+    $("confirm-ok").addEventListener("click", () => closeConfirm(true));
+    $("confirm-cancel").addEventListener("click", () => closeConfirm(false));
+    $("confirm-overlay").addEventListener("click", (e) => {
+      if (e.target === $("confirm-overlay")) closeConfirm(false);
+    });
+    document.addEventListener("keydown", (e) => {
+      if (!$("confirm-overlay").classList.contains("active")) return;
+      if (e.key === "Escape") closeConfirm(false);
+      else if (e.key === "Enter") {
+        e.preventDefault();
+        closeConfirm(true);
+      }
+    });
 
     $("setup-back").addEventListener("click", () => showOverlay("menu-overlay"));
     $("setup-start").addEventListener("click", startGame);
 
-    $("game-quit").addEventListener("click", () => quitGame(false));
+    $("game-quit").addEventListener("click", (e) =>
+      quitGame(false, anchorFromEvent(e)),
+    );
+    $("game-restart").addEventListener("click", (e) =>
+      restartRound(anchorFromEvent(e)),
+    );
     $("game-answer-submit").addEventListener("click", handleTypedSubmit);
     $("game-answer-input").addEventListener("keydown", (e) => {
       if (e.key === "Enter") {
@@ -792,7 +1440,7 @@
     });
 
     $("results-menu").addEventListener("click", () => showOverlay("menu-overlay"));
-    $("results-leaderboard").addEventListener("click", () => openLeaderboard("global"));
+    $("results-leaderboard").addEventListener("click", () => openLeaderboard());
     $("results-again").addEventListener("click", startGame);
 
     $("stats-back").addEventListener("click", () => showOverlay("menu-overlay"));
@@ -800,18 +1448,18 @@
     $("lb-back").addEventListener("click", () => showOverlay("menu-overlay"));
     $("lb-tab-global").addEventListener("click", () => {
       lbTab = "global";
-      renderLeaderboard();
+      renderLeaderboard({ autoSelect: true });
     });
     $("lb-tab-my").addEventListener("click", () => {
       lbTab = "my";
-      renderLeaderboard();
+      renderLeaderboard({ autoSelect: true });
     });
-    $("lb-filter-mode").addEventListener("change", (e) => {
-      lbMode = e.target.value;
-      renderLeaderboard();
+    $("lb-tab-custom").addEventListener("click", () => {
+      lbTab = "custom";
+      renderLeaderboard({ autoSelect: true });
     });
-    $("lb-filter-input").addEventListener("change", (e) => {
-      lbInput = e.target.value;
+    $("lb-filter").addEventListener("change", (e) => {
+      lbCombo = e.target.value;
       renderLeaderboard();
     });
 
@@ -822,6 +1470,7 @@
 
   async function init() {
     bindEvents();
+    applyPreferences(Backend.getPreferences());
     try {
       await Backend.init();
     } catch (e) {

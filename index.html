@@ -4,7 +4,10 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Lebanon Geography Explorer</title>
+  <title>GeoLeban</title>
+
+  <link rel="icon" type="image/jpeg" href="./assets/logo.jpg" />
+  <link rel="apple-touch-icon" href="./assets/logo.jpg" />
 
   <!-- External Library -->
   <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
@@ -21,6 +24,7 @@
   <!-- Datasets -->
   <script src="./lebanon.js"></script>
   <script src="./cazas.js"></script>
+  <script src="./cities.js"></script>
 
   <!-- Application Scripts -->
   <script src="./js/constants.js"></script>
@@ -35,53 +39,29 @@
 <body data-theme="light">
 
   <div class="control-card">
-    <div class="pill-group" id="theme-switch">
-      <button class="pill-btn active" id="btn-light" onclick="setTheme('light')">☀ Light</button>
-      <button class="pill-btn" id="btn-dark" onclick="setTheme('dark')">☾ Dark</button>
-    </div>
-
-    <div class="pill-group" id="lang-switch">
-      <button class="pill-btn active" id="lang-ar" onclick="setLanguage('ar')">
-        <svg class="flag-icon" viewBox="0 0 600 400">
-          <rect width="600" height="400" fill="#ED1C24" />
-          <rect y="100" width="600" height="200" fill="#fff" />
-          <polygon points="300,120 250,260 350,260" fill="#00A651" />
-          <rect x="290" y="260" width="20" height="20" fill="#00A651" />
-        </svg>
-        AR
-      </button>
-      <button class="pill-btn" id="lang-en" onclick="setLanguage('en')">
-        <svg class="flag-icon" viewBox="0 0 60 30">
-          <clipPath id="s">
-            <path d="M0,0 v30 h60 v-30 z" />
-          </clipPath>
-          <clipPath id="t">
-            <path d="M30,15 h30 v15 z v15 h-30 z h-30 v-15 z v-15 h30 z" />
-          </clipPath>
-          <g clip-path="url(#s)">
-            <path d="M0,0 v30 h60 v-30 z" fill="#012169" />
-            <path d="M0,0 L60,30 M60,0 L0,30" stroke="#fff" stroke-width="6" />
-            <path d="M0,0 L60,30 M60,0 L0,30" clip-path="url(#t)" stroke="#C8102E" stroke-width="4" />
-            <path d="M30,0 v30 M0,15 h60" stroke="#fff" stroke-width="10" />
-            <path d="M30,0 v30 M0,15 h60" stroke="#C8102E" stroke-width="6" />
-          </g>
-        </svg>
-        EN
-      </button>
-      <button class="pill-btn" id="lang-fr" onclick="setLanguage('fr')">
-        <svg class="flag-icon" viewBox="0 0 3 2">
-          <rect width="1" height="2" fill="#002395" />
-          <rect x="1" width="1" height="2" fill="#fff" />
-          <rect x="2" width="1" height="2" fill="#ED2939" />
-        </svg>
-        FR
-      </button>
-    </div>
+    <button class="btn-icon-square" id="btn-main-menu" title="Menu">
+      <svg viewBox="0 0 24 24">
+        <path d="M4 6h16M4 12h16M4 18h16" />
+      </svg>
+    </button>
 
     <div class="pill-group" id="mode-switch">
       <button id="btn-gov" class="pill-btn active" onclick="setMode('gov')">المحافظات</button>
       <button id="btn-caza" class="pill-btn" onclick="setMode('caza')">الأقضية</button>
+      <button id="btn-city" class="pill-btn" onclick="setMode('city')">المدن والقرى</button>
     </div>
+
+    <div class="search-wrap">
+      <input id="item-search" class="item-search" type="search" placeholder="بحث..." />
+      <div class="item-suggestions" id="item-suggestions"></div>
+    </div>
+
+    <button class="btn-icon-square" id="item-search-btn" type="button" title="Search">
+      <svg viewBox="0 0 24 24">
+        <circle cx="11" cy="11" r="7" />
+        <path d="m20 20-3.5-3.5" />
+      </svg>
+    </button>
 
     <select id="item-select" onchange="selectItem(this.value)">
       <option value="all">كامل لبنان</option>
@@ -136,15 +116,21 @@
 
   <div id="map"></div>
 
+  <!-- ============================= BOOT OVERLAY ============================ -->
+  <div class="overlay active" id="boot-overlay">
+    <div class="boot-spinner">
+      <img class="brand-logo boot-logo" src="./assets/logo.jpg" alt="GeoLeban" />
+      <div class="boot-ring"></div>
+    </div>
+  </div>
+
   <!-- ============================= AUTH OVERLAY ============================ -->
-  <div class="overlay active" id="auth-overlay">
+  <div class="overlay" id="auth-overlay">
     <div class="panel auth-panel">
-      <div class="brand">
-        <div class="brand-mark">GL</div>
-        <div>
-          <h1 data-i18n="title"></h1>
-          <p class="muted" data-i18n="subtitle"></p>
-        </div>
+      <div class="brand brand-stacked">
+        <img class="brand-logo brand-logo-lg" src="./assets/logo.jpg" alt="GeoLeban" />
+        <h1 data-i18n="title"></h1>
+        <p class="muted" data-i18n="subtitle"></p>
       </div>
 
       <div class="tab-switch">
@@ -195,6 +181,52 @@
           <span class="menu-icon">◎</span><span data-i18n="menuExplore"></span>
         </button>
       </div>
+
+      <div class="menu-controls">
+        <div class="pill-group" id="theme-switch">
+          <button class="pill-btn active" id="btn-light" onclick="setTheme('light')">☀ Light</button>
+          <button class="pill-btn" id="btn-dark" onclick="setTheme('dark')">☾ Dark</button>
+        </div>
+
+        <div class="pill-group" id="lang-switch">
+          <button class="pill-btn active" id="lang-ar" onclick="setLanguage('ar')">
+            <svg class="flag-icon" viewBox="0 0 600 400">
+              <rect width="600" height="400" fill="#ED1C24" />
+              <rect y="100" width="600" height="200" fill="#fff" />
+              <polygon points="300,120 250,260 350,260" fill="#00A651" />
+              <rect x="290" y="260" width="20" height="20" fill="#00A651" />
+            </svg>
+            AR
+          </button>
+          <button class="pill-btn" id="lang-en" onclick="setLanguage('en')">
+            <svg class="flag-icon" viewBox="0 0 60 30">
+              <clipPath id="s">
+                <path d="M0,0 v30 h60 v-30 z" />
+              </clipPath>
+              <clipPath id="t">
+                <path d="M30,15 h30 v15 z v15 h-30 z h-30 v-15 z v-15 h30 z" />
+              </clipPath>
+              <g clip-path="url(#s)">
+                <path d="M0,0 v30 h60 v-30 z" fill="#012169" />
+                <path d="M0,0 L60,30 M60,0 L0,30" stroke="#fff" stroke-width="6" />
+                <path d="M0,0 L60,30 M60,0 L0,30" clip-path="url(#t)" stroke="#C8102E" stroke-width="4" />
+                <path d="M30,0 v30 M0,15 h60" stroke="#fff" stroke-width="10" />
+                <path d="M30,0 v30 M0,15 h60" stroke="#C8102E" stroke-width="6" />
+              </g>
+            </svg>
+            EN
+          </button>
+          <button class="pill-btn" id="lang-fr" onclick="setLanguage('fr')">
+            <svg class="flag-icon" viewBox="0 0 3 2">
+              <rect width="1" height="2" fill="#002395" />
+              <rect x="1" width="1" height="2" fill="#fff" />
+              <rect x="2" width="1" height="2" fill="#ED2939" />
+            </svg>
+            FR
+          </button>
+        </div>
+      </div>
+
       <button class="link-btn" id="menu-logout" data-i18n="menuLogout"></button>
       <p class="local-note" id="menu-mode-note"></p>
     </div>
@@ -210,8 +242,30 @@
         <div class="segmented">
           <button data-setup-mode="gov" data-i18n="govOption"></button>
           <button data-setup-mode="caza" data-i18n="cazaOption"></button>
+          <button data-setup-mode="city" data-i18n="cityOption"></button>
         </div>
       </div>
+
+      <div class="setup-group" id="setup-area-group">
+        <label data-i18n="areaLabel"></label>
+        <div class="segmented">
+          <button data-setup-area="famous" data-i18n="areaFamous"></button>
+          <button data-setup-area="district" data-i18n="areaDistrict"></button>
+          <button data-setup-area="pick" data-i18n="areaPick"></button>
+        </div>
+      </div>
+
+      <div class="setup-group" id="setup-district-group">
+        <label data-i18n="districtLabel"></label>
+        <select id="setup-district"></select>
+        <div class="custom-timer">
+          <span data-i18n="countLabel"></span>
+          <input id="setup-count" type="number" min="1" value="1" />
+          <span id="setup-count-of"></span>
+        </div>
+      </div>
+
+      <p class="setup-note" id="setup-custom-note" data-i18n="customNote"></p>
 
       <div class="setup-group">
         <label data-i18n="inputLabel"></label>
@@ -248,7 +302,13 @@
       <span class="game-stat" id="game-progress"></span>
       <span class="game-stat timer" id="game-timer">0:00</span>
       <span class="game-stat" id="game-tries"></span>
+      <span class="game-stat" id="game-accuracy"></span>
       <span class="game-stat" id="game-score"></span>
+      <button class="game-restart" id="game-restart" data-i18n-title="restart">
+        <svg viewBox="0 0 24 24">
+          <path d="M21 12a9 9 0 1 1-2.64-6.36M21 3v6h-6" />
+        </svg>
+      </button>
       <button class="game-quit" id="game-quit" data-i18n="quit"></button>
     </div>
 
@@ -265,7 +325,19 @@
     <div class="game-feedback" id="game-feedback"></div>
   </div>
 
-  <button class="game-fab" id="game-fab" title="Menu">☰</button>
+  <div class="game-flash" id="game-flash"></div>
+
+  <!-- ========================= MAP TOAST + SELECT BAR ====================== -->
+  <div class="map-toast" id="map-toast"></div>
+
+  <div class="select-bar" id="select-bar">
+    <span class="select-instruction" data-i18n="pickInstruction"></span>
+    <span class="select-count"><span data-i18n="selectedCount"></span>: <strong id="select-count">0</strong></span>
+    <span class="select-error" id="select-error"></span>
+    <button class="link-btn" id="select-clear" data-i18n="clearSelection"></button>
+    <button class="game-quit" id="select-cancel" data-i18n="quit"></button>
+    <button class="btn-primary" id="select-start" data-i18n="startGame"></button>
+  </div>
 
   <!-- ============================ RESULTS OVERLAY ========================== -->
   <div class="overlay" id="results-overlay">
@@ -311,19 +383,12 @@
       </div>
       <div class="lb-controls">
         <div class="tab-switch small">
-          <button id="lb-tab-global" class="active" data-i18n="globalTab"></button>
-          <button id="lb-tab-my" data-i18n="myTab"></button>
+          <button id="lb-tab-my" class="active" data-i18n="myTab"></button>
+          <button id="lb-tab-custom" data-i18n="customTab"></button>
+          <button id="lb-tab-global" data-i18n="globalTab"></button>
         </div>
-        <select id="lb-filter-mode">
-          <option value="all" data-i18n="all"></option>
-          <option value="gov" data-i18n="govOption"></option>
-          <option value="caza" data-i18n="cazaOption"></option>
-        </select>
-        <select id="lb-filter-input">
-          <option value="all" data-i18n="all"></option>
-          <option value="click" data-i18n="clickShort"></option>
-          <option value="type" data-i18n="typeShort"></option>
-        </select>
+        <label class="lb-filter-label" for="lb-filter" data-i18n="board"></label>
+        <select id="lb-filter"></select>
       </div>
       <div class="table-wrap">
         <table class="lb-table">
@@ -331,7 +396,6 @@
             <tr>
               <th data-i18n="rank"></th>
               <th data-i18n="player"></th>
-              <th data-i18n="modeCol"></th>
               <th data-i18n="accuracyCol"></th>
               <th data-i18n="timeCol"></th>
               <th data-i18n="pointsCol"></th>
@@ -339,6 +403,18 @@
           </thead>
           <tbody id="lb-body"></tbody>
         </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- =========================== CONFIRM MODAL ============================= -->
+  <div class="overlay confirm-overlay" id="confirm-overlay">
+    <div class="panel confirm-panel">
+      <h3 id="confirm-title"></h3>
+      <p class="confirm-message" id="confirm-message"></p>
+      <div class="confirm-actions">
+        <button class="link-btn" id="confirm-cancel"></button>
+        <button class="btn-primary" id="confirm-ok"></button>
       </div>
     </div>
   </div>
