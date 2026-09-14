@@ -206,7 +206,8 @@ const TRANSLATIONS = {
       haveAccount: "لديك حساب بالفعل؟ سجّل الدخول",
       noAccount: "لا تملك حساباً؟ أنشئ حساباً",
       nameRequired: "الرجاء إدخال الاسم الكامل.",
-      emailInvalid: "الرجاء إدخال بريد إلكتروني صالح.",
+      emailInvalid: "هذا البريد الإلكتروني غير صالح.",
+      userBlocked: "هذا الحساب محظور.",
       passShort: "يجب أن تتكون كلمة المرور من 6 أحرف على الأقل.",
       invalidCredentials: "البريد الإلكتروني أو كلمة المرور غير صحيحة.",
       emailTaken: "هذا البريد الإلكتروني مستخدم بالفعل.",
@@ -240,8 +241,8 @@ const TRANSLATIONS = {
       districtLabel: "القضاء",
       countLabel: "عدد الأماكن",
       ofTotal: "من",
-      customNote:
-        "عدد مخصص: لن تظهر هذه النتيجة للجميع، وستُحفظ وحدها في تبويب «مخصص».",
+      pickNote:
+        "ملاحظة: نتائج «اختيار من الخريطة» لن تظهر في لوحة الصدارة، وستُحفظ لك وحدك في تبويب «مخصص».",
       pickInstruction: "اسحب فوق المدن والقرى التي تريد تخمينها",
       selectedCount: "تم اختيار",
       clearSelection: "مسح",
@@ -328,7 +329,8 @@ const TRANSLATIONS = {
       haveAccount: "Already have an account? Log in",
       noAccount: "No account? Sign up",
       nameRequired: "Please enter your full name.",
-      emailInvalid: "Please enter a valid email.",
+      emailInvalid: "This email is not valid.",
+      userBlocked: "This account has been blocked.",
       passShort: "Password must be at least 6 characters.",
       invalidCredentials: "Wrong email or password.",
       emailTaken: "That email is already registered.",
@@ -362,8 +364,8 @@ const TRANSLATIONS = {
       districtLabel: "District",
       countLabel: "How many to guess",
       ofTotal: "of",
-      customNote:
-        "Custom number: this result stays private under the Custom tab and won't appear for Everyone.",
+      pickNote:
+        "Note: Pick-on-map results won't appear on the leaderboard — they're saved for you only, under the Custom tab.",
       pickInstruction: "Drag over the cities/villages you want to guess",
       selectedCount: "Selected",
       clearSelection: "Clear",
@@ -450,7 +452,8 @@ const TRANSLATIONS = {
       haveAccount: "Déjà un compte ? Connectez-vous",
       noAccount: "Pas de compte ? Inscrivez-vous",
       nameRequired: "Veuillez saisir votre nom complet.",
-      emailInvalid: "Veuillez saisir un e-mail valide.",
+      emailInvalid: "Cet e-mail n'est pas valide.",
+      userBlocked: "Ce compte a été bloqué.",
       passShort: "Le mot de passe doit contenir au moins 6 caractères.",
       invalidCredentials: "E-mail ou mot de passe incorrect.",
       emailTaken: "Cet e-mail est déjà utilisé.",
@@ -485,8 +488,8 @@ const TRANSLATIONS = {
       districtLabel: "District",
       countLabel: "Combien deviner",
       ofTotal: "sur",
-      customNote:
-        "Nombre personnalisé : ce résultat reste privé dans l'onglet Personnalisé et n'apparaîtra pas pour Tous.",
+      pickNote:
+        "Remarque : les résultats « Choisir sur la carte » n'apparaîtront pas au classement — ils sont enregistrés pour vous uniquement, dans l'onglet Personnalisé.",
       pickInstruction: "Faites glisser sur les villes/villages à deviner",
       selectedCount: "Sélectionnés",
       clearSelection: "Effacer",

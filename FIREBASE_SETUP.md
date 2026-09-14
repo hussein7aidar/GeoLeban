@@ -73,13 +73,32 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Each user can read/write only their own profile (it contains email).
-    match /profiles/{userId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+    // An admin is any signed-in user whose UID is listed in "admins".
+    function isAdmin() {
+      return request.auth != null
+        && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
     }
 
-    // Results are public to read for the leaderboard. A user may only create
-    // a result that belongs to them, and results are immutable.
+    // Each user can read/write only their own profile (it contains email);
+    // admins can manage every profile.
+    match /profiles/{userId} {
+      allow read, write: if request.auth != null
+                         && (request.auth.uid == userId || isAdmin());
+    }
+
+    // The admin allow-list is managed only from the Firebase console.
+    match /admins/{uid} {
+      allow read: if request.auth != null && request.auth.uid == uid;
+      allow write: if false;
+    }
+
+    // Blocked emails: anyone can read (the game checks it), only admins write.
+    match /blockedEmails/{email} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Results are public to read for the leaderboard.
     match /results/{resultId} {
       allow read: if true;
       allow create: if request.auth != null
@@ -88,12 +107,12 @@ service cloud.firestore {
                     && request.resource.data.input in ['click', 'type']
                     && request.resource.data.points is int
                     && request.resource.data.points >= 0;
-      // A player may rename only their own past results (account name change).
-      allow update: if request.auth != null
+      // Owners may rename only their own past results; admins can edit/remove.
+      allow update: if isAdmin() || (request.auth != null
                     && request.auth.uid == resource.data.uid
                     && request.auth.uid == request.resource.data.uid
-                    && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name']);
-      allow delete: if false;
+                    && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name']));
+      allow delete: if isAdmin();
     }
   }
 }
@@ -134,6 +153,34 @@ Then open <http://localhost:8000>.
 > reason to use a local server.
 
 ---
+
+## 8. Admin portal (optional)
+
+`admin.html` is a small standalone page (no map, no game) that lets an admin:
+
+- see the registered users (name + email),
+- block / unblock an email (blocked emails can't sign in or sign up),
+- delete a user's data (profile + results) and block them,
+- change the admin username and password.
+
+**One-time setup**
+
+1. In **Authentication → Users**, click **Add user** and create the admin
+   account. The username is the part before the domain:
+   - **Email:** `username@geoleban.app` (for the login name `username`)
+   - **Password:** `password` (change it later from the portal)
+2. Copy that user's **UID**.
+3. In **Firestore Database**, create a collection named `admins`, add a document
+   whose **document ID is that UID**, and give it any field (e.g. `admin` = `true`).
+4. Publish the rules from step 5 (they use the `admins` collection).
+5. Open `admin.html` (locally, or at
+   `https://<your-username>.github.io/GeoLeban/admin.html`) and log in with
+   `username` / `password`.
+
+> **Note:** the page is client-only. "Delete" removes the user's profile and
+> results and blocks their email; it does **not** delete the Firebase Auth login
+> itself (that requires the Admin SDK / Cloud Functions). A blocked user can no
+> longer sign in or register.
 
 ## Data model
 

@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GeoLeban Admin</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 20px; color: #111; }
+    h1 { font-size: 1.2rem; }
+    h2 { font-size: 1rem; margin-top: 28px; border-bottom: 1px solid #ccc; padding-bottom: 4px; }
+    table { border-collapse: collapse; width: 100%; margin-top: 8px; }
+    th, td { border: 1px solid #ccc; padding: 6px 8px; text-align: left; font-size: 0.9rem; }
+    input, button { padding: 7px 9px; margin: 2px 0; font-size: 0.9rem; }
+    button { cursor: pointer; }
+    .row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+    .msg { color: #b00020; min-height: 1.1em; }
+    .ok { color: #0a7d33; }
+    .hidden { display: none; }
+    .muted { color: #666; font-size: 0.85rem; }
+    .danger { color: #b00020; }
+  </style>
+
+  <!-- Firebase SDK (compat) -->
+  <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore-compat.js"></script>
+
+  <script src="./js/firebase-config.js"></script>
+  <script src="./js/admin.js" defer></script>
+</head>
+
+<body>
+  <!-- ================================ LOGIN ================================ -->
+  <div id="login-view">
+    <h1>GeoLeban Admin</h1>
+    <p class="muted">Log in with the admin username and password.</p>
+    <div class="row">
+      <input id="login-user" type="text" placeholder="Username" autocomplete="username" />
+      <input id="login-pass" type="password" placeholder="Password" autocomplete="current-password" />
+      <button id="login-btn">Log in</button>
+    </div>
+    <p class="msg" id="login-msg"></p>
+  </div>
+
+  <!-- ================================ PORTAL =============================== -->
+  <div id="portal-view" class="hidden">
+    <div class="row" style="justify-content: space-between;">
+      <h1>GeoLeban Admin</h1>
+      <div class="row">
+        <span class="muted" id="who"></span>
+        <button id="refresh-btn">Refresh</button>
+        <button id="logout-btn">Log out</button>
+      </div>
+    </div>
+
+    <h2>Users</h2>
+    <p class="msg" id="users-msg"></p>
+    <table>
+      <thead>
+        <tr><th>Name</th><th>Email</th><th>UID</th><th>Created</th><th>Status</th><th>Actions</th></tr>
+      </thead>
+      <tbody id="users-body"></tbody>
+    </table>
+
+    <h2>Block an email</h2>
+    <div class="row">
+      <input id="block-email" type="email" placeholder="email@example.com" />
+      <button id="block-btn">Block</button>
+    </div>
+    <p class="msg" id="block-msg"></p>
+    <table>
+      <thead><tr><th>Blocked email</th><th>Blocked at</th><th></th></tr></thead>
+      <tbody id="blocked-body"></tbody>
+    </table>
+
+    <h2>Admin credentials</h2>
+    <p class="muted">
+      Leave a field empty to keep it unchanged. Username changes update the login
+      email (username@geoleban.app). Current password is required to save.
+    </p>
+    <div class="row">
+      <input id="cred-current" type="password" placeholder="Current password" />
+      <input id="cred-username" type="text" placeholder="New username" />
+      <input id="cred-password" type="password" placeholder="New password" />
+      <button id="cred-save">Save</button>
+    </div>
+    <p class="msg" id="cred-msg"></p>
+  </div>
+</body>
+
+</html>

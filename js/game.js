@@ -531,6 +531,7 @@
     if (code === "auth/email-already-in-use") return t("emailTaken");
     if (code === "auth/invalid-email") return t("emailInvalid");
     if (code === "auth/weak-password") return t("passShort");
+    if (code === "app/email-blocked") return t("userBlocked");
     return t("genericError");
   }
 
@@ -761,13 +762,10 @@
   function updateCustomNote() {
     const note = $("setup-custom-note");
     if (!note) return;
-    const total = districtCount(setupDistrict);
-    const count = Number(($("setup-count") || {}).value) || total;
-    const isCustom =
-      setupMode === "city" &&
-      (setupArea === "pick" ||
-        (setupArea === "district" && total > 0 && count < total));
-    note.style.display = isCustom ? "" : "none";
+    // Only Pick-on-map rounds are private: warn that their results stay on the
+    // player's side (Custom tab) and never reach the leaderboard.
+    const show = setupMode === "city" && setupArea === "pick";
+    note.style.display = show ? "" : "none";
   }
 
   function syncSetupUi() {

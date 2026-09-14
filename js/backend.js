@@ -261,12 +261,34 @@ const Backend = (function () {
     return mode === "firebase";
   }
 
+  // Admins can block an email from the admin portal; blocked emails can no
+  // longer sign in or sign up.
+  async function isEmailBlocked(email) {
+    if (mode !== "firebase") return false;
+    const clean = (email || "").trim().toLowerCase();
+    if (!clean) return false;
+    try {
+      const doc = await fbDb.collection("blockedEmails").doc(clean).get();
+      return doc.exists;
+    } catch (e) {
+      console.warn("[GeoLeban] Could not check the blocklist.", e);
+      return false;
+    }
+  }
+
+  function blockedError() {
+    const err = new Error("This account has been blocked.");
+    err.code = "app/email-blocked";
+    return err;
+  }
+
   async function signUp(name, email, password) {
     await init();
     const cleanName = (name || "").trim();
     const cleanEmail = (email || "").trim().toLowerCase();
 
     if (mode === "firebase") {
+      if (await isEmailBlocked(cleanEmail)) throw blockedError();
       const cred = await fbAuth.createUserWithEmailAndPassword(cleanEmail, password);
       try {
         await cred.user.updateProfile({ displayName: cleanName });
@@ -312,6 +334,7 @@ const Backend = (function () {
     const cleanEmail = (email || "").trim().toLowerCase();
 
     if (mode === "firebase") {
+      if (await isEmailBlocked(cleanEmail)) throw blockedError();
       const cred = await fbAuth.signInWithEmailAndPassword(cleanEmail, password);
       currentUser = await resolveProfile(cred.user);
       emit();
