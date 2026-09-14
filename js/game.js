@@ -871,10 +871,19 @@
     const actions = document.createElement("td");
     const toggle = document.createElement("button");
     toggle.className = "link-btn";
-    toggle.textContent = isBlocked ? "Unblock" : "Block";
-    toggle.addEventListener("click", () =>
-      isBlocked ? adminUnblock(email) : adminBlock(email),
-    );
+    if (email) {
+      toggle.textContent = isBlocked ? "Unblock" : "Block";
+      toggle.addEventListener("click", () =>
+        isBlocked ? adminUnblock(email) : adminBlock(email),
+      );
+    } else {
+      // No email on the profile, so it can't be blocked/unblocked.
+      toggle.textContent = "Block";
+      toggle.disabled = true;
+      toggle.title = "No email on this profile";
+      toggle.style.opacity = "0.5";
+      toggle.style.cursor = "default";
+    }
     actions.appendChild(toggle);
 
     const del = document.createElement("button");

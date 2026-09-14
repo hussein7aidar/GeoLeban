@@ -612,7 +612,15 @@ const Backend = (function () {
   async function adminListProfiles() {
     await init();
     const snap = await fbDb.collection("profiles").get();
-    return snap.docs.map((d) => Object.assign({ uid: d.id }, d.data()));
+    return snap.docs
+      .map((d) => Object.assign({ uid: d.id }, d.data()))
+      .filter((p) => {
+        const name = (p.name || "").trim();
+        const email = (p.email || "").trim();
+        // Some profile docs only store preferences (theme/language) and have
+        // no name/email. Skip those so the list shows real accounts only.
+        return name.length > 0 || email.length > 0;
+      });
   }
 
   async function adminListBlocked() {
