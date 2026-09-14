@@ -458,41 +458,56 @@
   <div class="overlay" id="admin-overlay">
     <div class="panel wide-panel">
       <div class="panel-head">
-        <h2 data-i18n="adminTitle"></h2>
-        <button class="link-btn" id="admin-logout" data-i18n="menuLogout"></button>
+        <h2>Admin</h2>
+        <button class="link-btn" id="admin-logout">Log out</button>
       </div>
       <p class="muted" id="admin-who"></p>
 
-      <h3 class="admin-h" data-i18n="adminUsers"></h3>
+      <h3 class="admin-h">Users</h3>
       <p class="form-error" id="admin-users-msg"></p>
       <div class="table-wrap">
         <table class="lb-table">
           <thead>
             <tr>
-              <th data-i18n="adminName"></th>
-              <th data-i18n="adminEmail"></th>
-              <th data-i18n="adminCreated"></th>
-              <th data-i18n="adminStatus"></th>
-              <th data-i18n="adminActions"></th>
+              <th>Name</th>
+              <th>Email</th>
+              <th>UID</th>
+              <th>Created</th>
+              <th>Status</th>
+              <th>Actions</th>
             </tr>
           </thead>
           <tbody id="admin-users-body"></tbody>
         </table>
       </div>
 
-      <h3 class="admin-h" data-i18n="adminBlock"></h3>
+      <h3 class="admin-h">Block an email</h3>
       <div class="admin-row">
         <input id="admin-block-email" type="email" placeholder="email@example.com" />
-        <button class="btn-primary" id="admin-block-btn" data-i18n="adminBlockBtn"></button>
+        <button class="btn-primary" id="admin-block-btn">Block</button>
       </div>
       <p class="form-error" id="admin-block-msg"></p>
 
-      <h3 class="admin-h" data-i18n="adminCreds"></h3>
+      <h3 class="admin-h">Blocked emails</h3>
+      <div class="table-wrap">
+        <table class="lb-table">
+          <thead>
+            <tr>
+              <th>Email</th>
+              <th>Created</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="admin-blocked-body"></tbody>
+        </table>
+      </div>
+
+      <h3 class="admin-h">Admin credentials</h3>
       <div class="admin-row">
-        <input id="admin-cred-current" type="password" data-i18n-ph="currentPassword" />
-        <input id="admin-cred-username" type="text" data-i18n-ph="adminNewUsername" />
-        <input id="admin-cred-password" type="password" data-i18n-ph="newPassword" />
-        <button class="btn-primary" id="admin-cred-save" data-i18n="adminSave"></button>
+        <input id="admin-cred-current" type="password" placeholder="Current password" />
+        <input id="admin-cred-username" type="text" placeholder="New username" />
+        <input id="admin-cred-password" type="password" placeholder="New password" />
+        <button class="btn-primary" id="admin-cred-save">Save</button>
       </div>
       <p class="form-error" id="admin-cred-msg"></p>
     </div>

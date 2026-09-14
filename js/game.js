@@ -743,6 +743,30 @@
     el.textContent = text || "";
   }
 
+  // The admin panel is English-only.
+  function adminError(err) {
+    const code = err && err.code;
+    if (code === "auth/wrong-password" || code === "auth/invalid-credential") {
+      return "Wrong password.";
+    }
+    if (code === "auth/weak-password") {
+      return "New password must be at least 6 characters.";
+    }
+    if (code === "auth/requires-recent-login") {
+      return "Please log out and log in again.";
+    }
+    if (code === "auth/email-already-in-use") {
+      return "That username is already taken.";
+    }
+    if (code === "auth/too-many-requests") {
+      return "Too many attempts. Try again later.";
+    }
+    if (code === "permission-denied") {
+      return "Permission denied — check the Firestore rules.";
+    }
+    return "Something went wrong.";
+  }
+
   function openAdminPortal() {
     showOverlay("admin-overlay");
     $("admin-who").textContent = state.user ? state.user.email || "" : "";
@@ -762,7 +786,7 @@
       users = await Backend.adminListProfiles();
     } catch (e) {
       console.warn("[GeoLeban] Admin list failed", e);
-      setAdminMsg("admin-users-msg", t("genericError"));
+      setAdminMsg("admin-users-msg", "Could not load users.");
       return;
     }
     try {
@@ -778,11 +802,50 @@
     if (!users.length) {
       const tr = document.createElement("tr");
       const td = document.createElement("td");
-      td.colSpan = 5;
+      td.colSpan = 6;
       td.className = "empty";
-      td.textContent = t("adminNoUsers");
+      td.textContent = "No users.";
       tr.appendChild(td);
       body.appendChild(tr);
+    }
+    renderAdminBlocked(blocked);
+  }
+
+  function renderAdminBlocked(blocked) {
+    const bbody = $("admin-blocked-body");
+    if (!bbody) return;
+    bbody.innerHTML = "";
+    (blocked || [])
+      .slice()
+      .sort((a, b) => (b.blockedAt || 0) - (a.blockedAt || 0))
+      .forEach((b) => {
+        const email = b.email || b.id;
+        const tr = document.createElement("tr");
+        const emailTd = document.createElement("td");
+        emailTd.textContent = email;
+        tr.appendChild(emailTd);
+        const atTd = document.createElement("td");
+        atTd.textContent = b.blockedAt
+          ? new Date(b.blockedAt).toLocaleDateString()
+          : "\u2014";
+        tr.appendChild(atTd);
+        const actionTd = document.createElement("td");
+        const btn = document.createElement("button");
+        btn.className = "link-btn";
+        btn.textContent = "Unblock";
+        btn.addEventListener("click", () => adminUnblock(email));
+        actionTd.appendChild(btn);
+        tr.appendChild(actionTd);
+        bbody.appendChild(tr);
+      });
+    if (!blocked || !blocked.length) {
+      const tr = document.createElement("tr");
+      const td = document.createElement("td");
+      td.colSpan = 3;
+      td.className = "empty";
+      td.textContent = "No blocked emails.";
+      tr.appendChild(td);
+      bbody.appendChild(tr);
     }
   }
 
@@ -797,17 +860,18 @@
     };
     tr.appendChild(cell(u.name || "\u2014"));
     tr.appendChild(cell(email || "\u2014"));
+    tr.appendChild(cell(u.uid || "\u2014"));
     tr.appendChild(
       cell(u.createdAt ? new Date(u.createdAt).toLocaleDateString() : "\u2014"),
     );
-    const status = cell(isBlocked ? t("adminBlocked") : t("adminActive"));
+    const status = cell(isBlocked ? "Blocked" : "Active");
     if (isBlocked) status.style.color = "#ef4444";
     tr.appendChild(status);
 
     const actions = document.createElement("td");
     const toggle = document.createElement("button");
     toggle.className = "link-btn";
-    toggle.textContent = isBlocked ? t("adminUnblock") : t("adminBlockBtn");
+    toggle.textContent = isBlocked ? "Unblock" : "Block";
     toggle.addEventListener("click", () =>
       isBlocked ? adminUnblock(email) : adminBlock(email),
     );
@@ -816,7 +880,7 @@
     const del = document.createElement("button");
     del.className = "link-btn";
     del.style.color = "#ef4444";
-    del.textContent = t("adminDelete");
+    del.textContent = "Delete";
     del.addEventListener("click", () => adminDeleteUser(u.uid, email));
     actions.appendChild(del);
     tr.appendChild(actions);
@@ -829,7 +893,7 @@
       setAdminMsg("admin-block-msg", "");
       renderAdmin();
     } catch (e) {
-      setAdminMsg("admin-block-msg", t("emailInvalid"));
+      setAdminMsg("admin-block-msg", "Enter a valid email.");
     }
   }
 
@@ -838,14 +902,17 @@
       await Backend.adminUnblockEmail(email);
       renderAdmin();
     } catch (e) {
-      setAdminMsg("admin-users-msg", t("genericError"));
+      setAdminMsg("admin-users-msg", "Something went wrong.");
     }
   }
 
   async function adminDeleteUser(uid, email) {
     const ok = await showConfirm({
-      title: t("adminDelete"),
-      message: (email || uid) + "?",
+      title: "Delete user",
+      message:
+        "Delete " +
+        (email || uid) +
+        " (profile + results) and block the email?",
     });
     if (!ok) return;
     try {
@@ -853,7 +920,7 @@
       setAdminMsg("admin-users-msg", "");
       renderAdmin();
     } catch (e) {
-      setAdminMsg("admin-users-msg", t("genericError"));
+      setAdminMsg("admin-users-msg", "Something went wrong.");
     }
   }
 
@@ -861,21 +928,28 @@
     const cur = $("admin-cred-current").value;
     const uname = $("admin-cred-username").value.trim();
     const pass = $("admin-cred-password").value;
-    if (!cur) return setAdminMsg("admin-cred-msg", t("currentPasswordRequired"));
-    if (!uname && !pass) return setAdminMsg("admin-cred-msg", t("genericError"));
+    if (!cur) {
+      return setAdminMsg("admin-cred-msg", "Enter your current password.");
+    }
+    if (!uname && !pass) {
+      return setAdminMsg("admin-cred-msg", "Nothing to change.");
+    }
     if (pass && pass.length < 6) {
-      return setAdminMsg("admin-cred-msg", t("passShort"));
+      return setAdminMsg(
+        "admin-cred-msg",
+        "New password must be at least 6 characters.",
+      );
     }
     try {
       await Backend.adminUpdateCredentials(cur, uname, pass);
       $("admin-cred-current").value = "";
       $("admin-cred-username").value = "";
       $("admin-cred-password").value = "";
-      setAdminMsg("admin-cred-msg", t("passwordUpdated"), true);
+      setAdminMsg("admin-cred-msg", "Credentials updated.", true);
       $("admin-who").textContent =
         (Backend.getCurrentUser() || {}).email || "";
     } catch (e) {
-      setAdminMsg("admin-cred-msg", mapAccountError(e));
+      setAdminMsg("admin-cred-msg", adminError(e));
     }
   }
 
